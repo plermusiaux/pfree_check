@@ -1,0 +1,21 @@
+CONSTRUCTORS
+
+z : Int
+s : Int -> Int
+
+int : Int -> Expr
+var : Expr
+
+plus : Expr * Expr -> Expr
+
+FUNCTIONS
+
+removePlus0 : Expr -> Expr [- plus(int(z()),e)]
+
+RULES
+
+removePlus0(int(i)) -> int(i)
+removePlus0(var()) -> var()
+
+removePlus0(plus(int(z),e)) -> removePlus0(e)
+removePlus0(plus(e1,e2)) -> plus(removePlus0(e1),removePlus0(e2))
