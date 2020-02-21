@@ -13,8 +13,8 @@ import Signature
 --------------------------------- From Algo: ----------------------------------
 
 isBottom :: Term -> Bool
-isBottom Bottom = trace "Bottom !" True
-isBottom t = trace ("not Bottom: " ++ show t) False
+isBottom Bottom = True
+isBottom t = False
 
 -- interleave abc ABC = Abc, aBc, abC
 interleave :: [a] -> [a] -> [[a]]
@@ -46,7 +46,7 @@ removePlusses Bottom = S.empty
 removePlusses (Alias x p) = S.map (Alias x) (removePlusses p)
 
 complement :: Signature -> Term -> Term -> Term
-complement sig p1 p2 = trace (show p1 ++ " \\ " ++ show p2) p1 \\ p2
+complement sig p1 p2 = p1 \\ p2
   where
     alias x Bottom = Bottom
     alias x t = Alias x t
@@ -113,25 +113,30 @@ inferVarType sig (Rule lhs rhs) = Rule lhs (replaceVar varMap rhs)
                   where mapVariables m ((Var x), s) = M.insert x (AVar x Bottom s) m
                         mapVariables m _ = m
 
--- return something more interesting than a Bool? Set of failed rules?
-checkTRS :: Signature -> [Rule] -> Bool
-checkTRS sig rules = foldl accuCheck True (typeVariables sig rules)
-  where accuCheck False _ = False
-        accuCheck True rule = trace ("checking rule " ++ show rule) (checkRule sig rule)
+checkTRS :: Signature -> [Rule] -> M.Map Rule [Term]
+checkTRS sig rules = foldl accuCheck M.empty (typeVariables sig rules)
+  where accuCheck m rule
+          | null fails = m
+          | otherwise  = M.insert rule fails m
+          where fails = checkRule sig rule
 
-checkRule :: Signature -> Rule -> Bool
+checkRule :: Signature -> Rule -> [Term]
 checkRule sig (Rule (Appl f ts) rhs)
-  | (p == Bottom) = True
+  | (p == Bottom) = []
   | otherwise     = checkPfree sig p rhs
   where p = pfree sig f
 
-checkPfree :: Signature -> Term -> Term -> Bool
-checkPfree sig p t@(Appl f ts) = trace ("checking term " ++ show t) (isBottom (conjunction sig t p)) && (all (checkPfree sig p) ts)
-checkPfree sig p t@(AVar _ q s) = trace ("checking AVar " ++ show t) all (check . buildComplement) (getReachable sig q s)
-  where buildComplement (Reach s' p')
+checkPfree :: Signature -> Term -> Term -> [Term]
+checkPfree sig p t@(Appl f ts)
+  | (isBottom (conjunction sig t p)) = trace ("checking term " ++ show t) subFails
+  | otherwise                        = trace ("checking term " ++ show t) (t:subFails)
+  where subFails = concatMap (checkPfree sig p) ts
+checkPfree sig p t@(AVar _ q s) = trace ("checking AVar " ++ show t) (S.toList (S.filter check reachables))
+  where reachables = S.map buildComplement (getReachable sig q s)
+        buildComplement (Reach s' p')
           | null p'   = (AVar "_" q s')
           | otherwise = Compl (AVar "_" q s') (sumTerm (S.toList p'))
-        check u = trace ("checking term " ++ show u) isBottom (conjunction sig u p)
+        check u = trace ("checking term " ++ show u) (not (isBottom (conjunction sig u p)))
 
 -------------------------------- getReachable: --------------------------------
 
