@@ -77,25 +77,35 @@ rule = mkRule <$> termSum <*> arrow <*> term
 rules :: Parser [Rule]
 rules = many rule
 
-funType :: Parser ([TypeName], TypeName, Term)
-funType = try (mkPType <$> (typeName `sepBy` star) <*> (arrow >> typeName) <*> brackets (mfree >> term))
-          <|> try (mkType <$> (typeName `sepBy` star) <*> (arrow >> typeName))
+funType :: Parser ([AType], AType)
+funType = try (mkFType <$> (aType `sepBy` star) <*> (arrow >> aType))
+          <|> mkEmptyType <$> aType
+  where
+    mkFType domain range = (domain, range)
+    mkEmptyType range = ([], range)
+
+aType :: Parser AType
+aType = try (AType <$> typeName <*> (brackets (mfree >> term)))
+        <|> mkDefaultAType <$> typeName
+  where mkDefaultAType s = AType s Bottom
+
+consType :: Parser ([TypeName], TypeName)
+consType = try (mkFType <$> (typeName `sepBy` star) <*> (arrow >> typeName))
           <|> mkEmptyType <$> typeName
   where
-    mkType domain range = (domain, range, Bottom)
-    mkPType domain range pattern = (domain, range, pattern)
-    mkEmptyType range = ([], range, Bottom)
+    mkFType domain range = (domain, range)
+    mkEmptyType range = ([], range)
 
 constructor :: Parser Constructor
-constructor = mkDecl <$> funName <*> (colon >> funType)
-  where mkDecl f (domain, range, _) = Constructor f domain range
+constructor = mkDecl <$> funName <*> (colon >> consType)
+  where mkDecl f (domain, range) = Constructor f domain range
 
 constructors :: Parser [Constructor]
 constructors = many (try constructor)
 
 function :: Parser Function
 function = mkDecl <$> funName <*> (colon >> funType)
-  where mkDecl f (domain, range, pattern) = Function f domain range pattern
+  where mkDecl f (domain, range) = Function f domain range
 
 functions :: Parser [Function]
 functions = many (try function)

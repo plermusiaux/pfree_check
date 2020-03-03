@@ -15,6 +15,8 @@
 module Signature (
   domain,
   range,
+  aDomain,
+  aRange,
   pfree,
   arity,
   ctorsOfRange,
@@ -23,11 +25,21 @@ module Signature (
   isFunc
 ) where
 
-import Datatypes (FunName(..), TypeName, Constructor(..), Function(..), Signature(..), Term(..))
+import Datatypes (FunName(..), TypeName, Constructor(..), Function(..), Signature(..), Term(..), AType(..))
 import Data.List ( foldl )
 import Data.Maybe
 
 _funName (Constructor f _ _) = f
+
+_typeName (AType s _) = s
+_pfree (AType _ p) = p
+
+getterF :: (Function -> Maybe a) -> Signature -> FunName -> a
+getterF get (Signature _ funs) f = try (foldl (wrap get) Nothing funs)
+  where try (Just r) = r
+        try Nothing = error (show f ++ " is not declared")
+        wrap get Nothing g = get g
+        wrap _ j _ = j
 
 getter :: (Constructor -> Maybe a) -> (Function -> Maybe a) -> Signature -> FunName -> a
 getter getC getF (Signature ctors funs) f = try (foldl (wrap getC) (foldl (wrap getF) Nothing funs) ctors)
@@ -41,8 +53,8 @@ domain sig f = getter getC getF sig f
   where getC (Constructor g d _)
           | f == g    = Just d
           | otherwise = Nothing
-        getF (Function g d _ _)
-          | f == g    = Just d
+        getF (Function g d _)
+          | f == g    = Just (map _typeName d)
           | otherwise = Nothing
 
 range :: Signature -> FunName -> TypeName
@@ -50,15 +62,26 @@ range sig f = getter getC getF sig f
   where getC (Constructor g _ r)
           | f == g    = Just r
           | otherwise = Nothing
-        getF (Function g _ r _)
+        getF (Function g _ r)
+          | f == g    = Just (_typeName r)
+          | otherwise = Nothing
+
+aDomain :: Signature -> FunName -> [AType]
+aDomain sig f = getterF get sig f
+  where get (Function g d _)
+          | f == g    = Just d
+          | otherwise = Nothing
+
+aRange :: Signature -> FunName -> AType
+aRange sig f = getterF get sig f
+  where get (Function g _ r)
           | f == g    = Just r
           | otherwise = Nothing
 
 pfree :: Signature -> FunName -> Term
-pfree sig f = getter getC getF sig f
-  where getC _ = Nothing
-        getF (Function g _ _ p)
-          | f == g    = Just p
+pfree sig f = getterF get sig f
+  where get (Function g _ r)
+          | f == g    = Just (_pfree r)
           | otherwise = Nothing
 
 arity :: Signature -> FunName -> Int
@@ -75,8 +98,8 @@ hasType :: Signature -> Term -> TypeName -> Bool
 hasType sig (Appl f _) s = range sig f == s
 hasType sig (Alias _ t) s = hasType sig t s
 hasType sig Bottom _ = False
-hasType sig (AVar _ _ s1) s2 = s1 == s2
+hasType sig (AVar _ (AType s1 _)) s2 = s1 == s2
 
 isFunc :: Signature -> FunName -> Bool
 isFunc (Signature _ funs) f = any isF funs
-  where isF (Function g _ _ _) = f==g
+  where isF (Function g _ _) = f==g

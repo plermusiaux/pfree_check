@@ -11,8 +11,8 @@ list : List -> Expr
 
 FUNCTIONS
 
-flattenE : Expr -> Expr [- cons(list(l1),l2) ]
-flattenL : List -> List [- cons(list(l1),l2) ]
+flattenE : Expr -> Expr [- cons(e1,l2) ]
+flattenL : List -> List [- cons(e1,l2) ]
 concat : List * List -> List
 
 RULES

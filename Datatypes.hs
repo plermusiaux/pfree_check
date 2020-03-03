@@ -20,6 +20,7 @@ module Datatypes (
   Function(..),
   Signature(..),
   Term(..),
+  AType(..),
   Rule(..),
   Module(..)
 ) where
@@ -40,10 +41,13 @@ data TypeName = TypeName String
               | Unknown
   deriving (Eq, Ord)
 
+data AType = AType TypeName Term
+  deriving (Eq, Ord)
+
 data Constructor = Constructor FunName [TypeName] TypeName
   deriving (Eq, Ord)
 
-data Function = Function FunName [TypeName] TypeName Term
+data Function = Function FunName [AType] AType
   deriving (Eq, Ord)
 
 data Signature = Signature [Constructor] [Function]
@@ -56,7 +60,7 @@ data Term = Appl FunName [Term]
           | Alias VarName Term
           | Anti Term
           | Bottom
-          | AVar VarName Term TypeName
+          | AVar VarName AType
   deriving (Eq, Ord)
 
 data Rule = Rule Term Term
@@ -76,6 +80,10 @@ instance Show FunName where
 instance Show TypeName where
   show (TypeName ty) = ty
 
+instance Show AType where
+  show (AType s Bottom) = show s
+  show (AType s p) = show s ++ "[-" ++ show p ++ "]"
+
 parSep :: [String] -> String
 parSep ss = "(" ++ intercalate ", " ss ++ ")"
 
@@ -83,8 +91,7 @@ instance Show Constructor where
   show (Constructor f tys ty) = show f ++ ": " ++ intercalate " * " (map show tys) ++ " -> " ++ show ty
 
 instance Show Function where
-  show (Function f tys ty Bottom) = show f ++ ": " ++ intercalate " * " (map show tys) ++ " -> " ++ show ty
-  show (Function f tys ty p) = show f ++ ": " ++ intercalate " * " (map show tys) ++ " -> " ++ show ty ++ "[-" ++ show p ++ "]"
+  show (Function f d r) = show f ++ ": " ++ intercalate " * " (map show d) ++ " -> " ++ show r
 
 instance Show Signature where
   show (Signature ctors funs) = show (ctors, funs)
@@ -97,7 +104,7 @@ instance Show Term where
   show (Alias x p) = show x ++ "@" ++ show p
   show (Anti p) = "!" ++ show p
   show Bottom = "⊥"
-  show (AVar x p s) = show x ++ " : " ++ show s ++ "[-" ++ show p ++ "]"
+  show (AVar x s) = show x ++ " : " ++ show s
 
 instance Show Rule where
   show (Rule lhs rhs) = show lhs ++ " -> " ++ show rhs

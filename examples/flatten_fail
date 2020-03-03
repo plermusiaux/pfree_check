@@ -20,8 +20,8 @@ RULES
 flattenE(bool(b)) -> bool(b)
 flattenE(list(l)) -> list(flattenL(l))
 
-flattenL(cons(bool(b),l)) -> conc(bool(b),flattenL(l))
-flattenL(cons(list(l1),l2)) -> concat(flatten(l1),flatten(l2))
+flattenL(cons(bool(b),l)) -> cons(bool(b),flattenL(l))
+flattenL(cons(list(l1),l2)) -> concat(flattenL(l1),flattenL(l2))
 flattenL(l) -> nil()
 
 concat(cons(e,l1),l2) -> cons(e,concat(l1,l2))
