@@ -95,10 +95,13 @@ ctorsOfSameRange :: Signature -> FunName -> [FunName]
 ctorsOfSameRange sig f = ctorsOfRange sig (range sig f)
 
 hasType :: Signature -> Term -> TypeName -> Bool
-hasType sig (Appl f _) s = range sig f == s
-hasType sig (Alias _ t) s = hasType sig t s
-hasType sig Bottom _ = False
-hasType sig (AVar _ (AType s1 _)) s2 = s1 == s2
+hasType sig t s = t # s
+  where
+    (Appl f _) # so = range sig f == so
+    (Alias _ u) # so = u # so
+    Bottom # _ = False
+    (AVar _ (AType s1 _)) # s2 = s1 == s2
+    (Compl u _) # so = u # so
 
 isFunc :: Signature -> FunName -> Bool
 isFunc (Signature _ funs) f = any isF funs

@@ -43,7 +43,8 @@ removePlusses (Appl f ps) = S.map (Appl f) subterms                       --S1
 removePlusses v@(Var _) = S.singleton v
 removePlusses v@(AVar _ _) = S.singleton v
 removePlusses Bottom = S.empty
-removePlusses (Alias x p) = S.map (Alias x) (removePlusses p)
+removePlusses a@(Alias x p) = S.singleton a
+--removePlusses (Alias x p) = S.map (Alias x) (removePlusses p)
 
 complement :: Signature -> Term -> Term -> Term
 complement sig p1 p2 = p1 \\ p2
@@ -64,7 +65,7 @@ complement sig p1 p2 = p1 \\ p2
         | otherwise = sumTerm [appl f ps' | ps' <- interleave ps pqs]     --M7
       where pqs = zipWith (\\) ps qs
             someUnchanged = or (zipWith (==) ps pqs)
-    (Compl v t) \\ u = complement sig v (plus t u)                        --P5
+    (Compl v t) \\ u = v \\ (plus t u)                                    --P5
     v@(AVar x (AType s p)) \\ t
         | null (getReach sig p (Reach s r) S.empty) = Bottom              --P6
         | otherwise                                = Compl v t
@@ -86,18 +87,42 @@ conjunction sig p1 p2 = p1 * p2
         | hasType sig u s = u                                             --T2
         | otherwise       = Bottom
     Appl f ps * Appl g qs
-        | f == g = appl f (zipWith (conjunction sig) ps qs)               --T3
+        | f == g = appl f (zipWith (*) ps qs)                             --T3
         | otherwise = Bottom                                              --T4
-    (AVar _ (AType s p)) * q@(Appl f ps)
-        | s == range sig f = (sumTerm (map pattern fs)) * (complement sig q p) --P1
+--    (AVar _ (AType s p)) * t@(Appl f ts)
+--        | s == range sig f = (sumTerm (map pattern fs)) * (complement sig q p) --P1
+--        | otherwise        = Bottom
+--        where fs = ctorsOfRange sig s
+--              pattern a = Appl a (map buildVar (domain sig a))
+--              buildVar si = AVar "_" (AType si p)
+    (AVar _ (AType s p)) * (Appl f ts)
+        | s == range sig f = complement sig (Appl f tsXz) p               --P1
         | otherwise        = Bottom
-        where fs = ctorsOfRange sig s
-              pattern a = Appl a (map buildVar (domain sig a))
-              buildVar si = AVar "_" (AType si p)
-    v1 * (Compl v2 t) = complement sig (conjunction sig v1 v2) t               --P2-3
-    (Compl v t) * u = complement sig (conjunction sig v u) t                   --P4
+        where tsXz = zipWith conjVar ts (domain sig f)
+              conjVar t s = t * (AVar "_" (AType s p))
+    v1 * (Compl v2 t) = complement sig (v1 * v2) t                        --P2-3
+    (Compl v t) * u = complement sig (v * u) t                            --P4
+
+    (Var x) * u = Alias x u
+    (Appl f ts) * (AVar _ (AType _ p)) = complement sig (Appl f tsXz) p
+        where tsXz = zipWith conjVar ts (domain sig f)
+              conjVar t s = t * (AVar "_" (AType s p))
 
 
+aliasing :: Signature -> [Rule] -> [Rule]
+aliasing sig rules = concatMap (replaceVariables sig) rules
+
+replaceVariables :: Signature -> Rule -> [Rule]
+replaceVariables sig (Rule lhs@(Appl f ls) rhs) = map buildRule lterms
+  where lterms = S.toList (removePlusses (Appl f subLterms))
+        subLterms = zipWith conj ls (aDomain sig f)
+        conj t s = conjunction sig t (AVar "_" s)
+        buildRule l = Rule l (replaceVar varMap rhs)
+          where varMap = getVarMap l
+                getVarMap (Alias x t) = M.singleton x t
+                getVarMap (Appl g ts) = M.unions (map getVarMap ts)
+                replaceVar m (Appl f ts) = Appl f (map (replaceVar m) ts)
+                replaceVar m (Var x) = m M.! x
 
 typeVariables :: Signature -> [Rule] -> [Rule]
 typeVariables sig rules = map (inferVarType sig) rules
@@ -118,18 +143,23 @@ buildEqui sig t@(Appl f ts)
   | isFunc sig f = AVar (VarName (show t)) (aRange sig f)
   | otherwise    = Appl f (map (buildEqui sig) ts)
 buildEqui sig t = t
+
+check :: Signature -> Term -> Term -> Bool
+check sig t p@(Appl f _)
+  | hasType sig t (range sig f) = trace ("checking term " ++ show t) (isBottom (conjunction sig t p))
+  | otherwise                   = True
   
 checkTRS :: Signature -> [Rule] -> M.Map Rule [Term]
-checkTRS sig rules = foldl accuCheck M.empty (typeVariables sig rules)
+checkTRS sig rules = foldl accuCheck M.empty (aliasing sig rules)
   where accuCheck m rule
           | null fails = m
           | otherwise  = M.insert rule fails m
           where fails = checkRule sig rule
 
 checkRule :: Signature -> Rule -> [Term]
-checkRule sig (Rule (Appl f ts) rhs)
+checkRule sig r@(Rule (Appl f ts) rhs)
   | (p == Bottom) = []
-  | otherwise     = (checkComposition sig rhs) ++ (checkPfree sig p (buildEqui sig rhs))
+  | otherwise     = trace ("checking rule " ++ show r) ((checkComposition sig rhs) ++ (checkPfree sig p (buildEqui sig rhs)))
   where p = pfree sig f
 
 checkComposition :: Signature -> Term -> [Term]
@@ -139,19 +169,26 @@ checkComposition sig (Appl f ts)
   where check (t, (AType _ Bottom)) = []
         check (t, (AType _ p)) = checkPfree sig p (buildEqui sig t)
         subCheck = concatMap (checkComposition sig) ts
+checkComposition sig (Compl t _) = checkComposition sig t
 checkComposition sig (AVar _ _) = []
 
 checkPfree :: Signature -> Term -> Term -> [Term]
 checkPfree sig p t@(Appl f ts)
-  | (isBottom (conjunction sig t p)) = trace ("checking term " ++ show t) subFails
-  | otherwise                        = trace ("checking term " ++ show t) (t:subFails)
+  | check sig t p = subFails
+  | otherwise     = t:subFails
   where subFails = concatMap (checkPfree sig p) ts
-checkPfree sig p t@(AVar _ (AType s q)) = trace ("checking AVar " ++ show t) (S.toList (S.filter check reachables))
+checkPfree sig p t@(AVar _ (AType s q)) = trace ("checking AVar " ++ show t) (S.toList (S.filter ncheck reachables))
   where reachables = S.map buildComplement (getReachable sig q s)
         buildComplement (Reach s' p')
           | null p'   = (AVar "_" (AType s' q))
           | otherwise = Compl (AVar "_" (AType s' q)) (sumTerm (S.toList p'))
-        check u = trace ("checking term " ++ show u) (not (isBottom (conjunction sig u p)))
+        ncheck t = not (check sig t p)
+checkPfree sig p t@(Compl (AVar _ (AType s q)) r) = trace ("checking Compl " ++ show t) (S.toList (S.filter ncheck reachables))
+  where reachables = S.map buildComplement (getReachableR sig q s (removePlusses r))
+        buildComplement (Reach s' p')
+          | null p'   = (AVar "_" (AType s' q))
+          | otherwise = Compl (AVar "_" (AType s' q)) (sumTerm (S.toList p'))
+        ncheck t = not (check sig t p)
 
 -------------------------------- getReachable: --------------------------------
 
@@ -165,6 +202,9 @@ data Reach = Reach TypeName (S.Set Term)
 --
 getReachable :: Signature -> Term -> TypeName -> S.Set Reach
 getReachable sig p s = getReach sig p (Reach s S.empty) S.empty
+
+getReachableR :: Signature -> Term -> TypeName -> S.Set Term -> S.Set Reach
+getReachableR sig p s r = getReach sig p (Reach s r) S.empty
 
 -- abandon hope all ye who enter here
 getReach :: Signature -> Term -> Reach -> S.Set Reach -> S.Set Reach
