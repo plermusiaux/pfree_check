@@ -99,14 +99,14 @@ conjunction sig p1 p2 = p1 * p2
         | s == range sig f = complement sig (Appl f tsXz) p               --P1
         | otherwise        = Bottom
         where tsXz = zipWith conjVar ts (domain sig f)
-              conjVar t s = t * (AVar "_" (AType s p))
+              conjVar t s = (AVar "_" (AType s p)) * t
     v1 * (Compl v2 t) = complement sig (v1 * v2) t                        --P2-3
     (Compl v t) * u = complement sig (v * u) t                            --P4
 
     (Var x) * u = Alias x u
     (Appl f ts) * (AVar _ (AType _ p)) = complement sig (Appl f tsXz) p
         where tsXz = zipWith conjVar ts (domain sig f)
-              conjVar t s = t * (AVar "_" (AType s p))
+              conjVar t s = t * (AVar (VarName (show t)) (AType s p))
 
 
 aliasing :: Signature -> [Rule] -> [Rule]
@@ -116,27 +116,13 @@ replaceVariables :: Signature -> Rule -> [Rule]
 replaceVariables sig (Rule lhs@(Appl f ls) rhs) = map buildRule lterms
   where lterms = S.toList (removePlusses (Appl f subLterms))
         subLterms = zipWith conj ls (aDomain sig f)
-        conj t s = conjunction sig t (AVar "_" s)
+        conj t s = conjunction sig t (AVar (VarName (show t)) s)
         buildRule l = Rule l (replaceVar varMap rhs)
           where varMap = getVarMap l
                 getVarMap (Alias x t) = M.singleton x t
                 getVarMap (Appl g ts) = M.unions (map getVarMap ts)
                 replaceVar m (Appl f ts) = Appl f (map (replaceVar m) ts)
                 replaceVar m (Var x) = m M.! x
-
-typeVariables :: Signature -> [Rule] -> [Rule]
-typeVariables sig rules = map (inferVarType sig) rules
-
-inferVarType :: Signature -> Rule -> Rule
-inferVarType sig (Rule lhs rhs) = Rule lhs (replaceVar varMap rhs)
-  where replaceVar m t@(Appl f ts) = Appl f (map (replaceVar m) ts)
-        replaceVar m (Var x) = m M.! x
-        varMap = getVarMap M.empty lhs
-          where getVarMap m (Appl f ts) = foldl getVarMap (updateMap ts f m) ts
-                getVarMap m _ = m
-                updateMap ts f m = foldl mapVariables m (zip ts (domain sig f))
-                  where mapVariables m ((Var x), s) = M.insert x (AVar x (AType s Bottom)) m
-                        mapVariables m _ = m
 
 buildEqui :: Signature -> Term -> Term
 buildEqui sig t@(Appl f ts)
@@ -243,3 +229,20 @@ getReach sig p (Reach s r) reach
                           | instantiated = (True, S.unions lReach)
                           | otherwise    = (qImpl, qReach)
                 d = domain sig c
+
+
+
+----------------------------- not used anymore --------------------------------
+typeVariables :: Signature -> [Rule] -> [Rule]
+typeVariables sig rules = map (inferVarType sig) rules
+
+inferVarType :: Signature -> Rule -> Rule
+inferVarType sig (Rule lhs rhs) = Rule lhs (replaceVar varMap rhs)
+  where replaceVar m t@(Appl f ts) = Appl f (map (replaceVar m) ts)
+        replaceVar m (Var x) = m M.! x
+        varMap = getVarMap M.empty lhs
+          where getVarMap m (Appl f ts) = foldl getVarMap (updateMap ts f m) ts
+                getVarMap m _ = m
+                updateMap ts f m = foldl mapVariables m (zip ts (domain sig f))
+                  where mapVariables m ((Var x), s) = M.insert x (AVar x (AType s Bottom)) m
+                        mapVariables m _ = m
