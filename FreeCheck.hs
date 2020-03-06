@@ -83,7 +83,7 @@ conjunction sig p1 p2 = p1 * p2
     (Plus u1 u2) * u = plus (u1 * u) (u2 * u)                             --S2
     u * (Plus u1 u2) = plus (u * u1) (u * u2)                             --S3
     u * (Var _) = u                                                       --T1
-    (AVar _ (AType s Bottom)) * u                                                 
+    (AVar _ (AType s Bottom)) * u
         | hasType sig u s = u                                             --T2
         | otherwise       = Bottom
     Appl f ps * Appl g qs
@@ -113,10 +113,10 @@ aliasing :: Signature -> [Rule] -> [Rule]
 aliasing sig rules = concatMap (replaceVariables sig) rules
 
 replaceVariables :: Signature -> Rule -> [Rule]
-replaceVariables sig (Rule lhs@(Appl f ls) rhs) = map buildRule lterms
+replaceVariables sig (Rule (Appl f ls) rhs) = map buildRule lterms
   where lterms = S.toList (removePlusses (Appl f subLterms))
-        subLterms = zipWith conj ls (aDomain sig f)
-        conj t s = conjunction sig t (AVar (VarName (show t)) s)
+        subLterms = zipWith conjVar ls (aDomain sig f)
+        conjVar t s = conjunction sig t (AVar (VarName (show t)) s)
         buildRule l = Rule l (replaceVar varMap rhs)
           where varMap = getVarMap l
                 getVarMap (Alias x t) = M.singleton x t
@@ -124,17 +124,21 @@ replaceVariables sig (Rule lhs@(Appl f ls) rhs) = map buildRule lterms
                 replaceVar m (Appl f ts) = Appl f (map (replaceVar m) ts)
                 replaceVar m (Var x) = m M.! x
 
+-- return the semantics equivalent of a term
 buildEqui :: Signature -> Term -> Term
 buildEqui sig t@(Appl f ts)
   | isFunc sig f = AVar (VarName (show t)) (aRange sig f)
   | otherwise    = Appl f (map (buildEqui sig) ts)
 buildEqui sig t = t
 
+-- check that t X p reduces to Bottom
 check :: Signature -> Term -> Term -> Bool
 check sig t p@(Appl f _)
   | hasType sig t (range sig f) = trace ("checking term " ++ show t) (isBottom (conjunction sig t p))
   | otherwise                   = True
-  
+
+-- check TRS : alias the variables in the right term of each rule and call checkRule
+-- return a map of failed rule with the terms that do not satisfy the expected pattern-free property
 checkTRS :: Signature -> [Rule] -> M.Map Rule [Term]
 checkTRS sig rules = foldl accuCheck M.empty (aliasing sig rules)
   where accuCheck m rule
@@ -142,12 +146,16 @@ checkTRS sig rules = foldl accuCheck M.empty (aliasing sig rules)
           | otherwise  = M.insert rule fails m
           where fails = checkRule sig rule
 
+-- check rule : check that the right term satisfies the expected pattern-free properties
+-- return a list of terms that do not satisfy the expected pattern-free property
 checkRule :: Signature -> Rule -> [Term]
 checkRule sig r@(Rule (Appl f ts) rhs)
-  | (p == Bottom) = []
+  | (p == Bottom) = checkComposition sig rhs
   | otherwise     = trace ("checking rule " ++ show r) ((checkComposition sig rhs) ++ (checkPfree sig p (buildEqui sig rhs)))
   where p = pfree sig f
 
+-- check in a term that all arguments of a function call satisfy the expected pattern-free property
+-- return a list of terms that do not satisfy the expected pattern-free property
 checkComposition :: Signature -> Term -> [Term]
 checkComposition sig (Appl f ts)
   | isFunc sig f = concatMap check (zip ts (aDomain sig f)) ++ subCheck
@@ -158,6 +166,8 @@ checkComposition sig (Appl f ts)
 checkComposition sig (Compl t _) = checkComposition sig t
 checkComposition sig (AVar _ _) = []
 
+-- check that a term is p-free
+-- return a list of terms that do not satisfy the expected pattern-free property
 checkPfree :: Signature -> Term -> Term -> [Term]
 checkPfree sig p t@(Appl f ts)
   | check sig t p = subFails
@@ -238,7 +248,7 @@ typeVariables sig rules = map (inferVarType sig) rules
 
 inferVarType :: Signature -> Rule -> Rule
 inferVarType sig (Rule lhs rhs) = Rule lhs (replaceVar varMap rhs)
-  where replaceVar m t@(Appl f ts) = Appl f (map (replaceVar m) ts)
+  where replaceVar m (Appl f ts) = Appl f (map (replaceVar m) ts)
         replaceVar m (Var x) = m M.! x
         varMap = getVarMap M.empty lhs
           where getVarMap m (Appl f ts) = foldl getVarMap (updateMap ts f m) ts

@@ -37,8 +37,7 @@ newtype VarName = VarName String
 newtype FunName = FunName String
   deriving (Eq, Ord)
 
-data TypeName = TypeName String
-              | Unknown
+newtype TypeName = TypeName String
   deriving (Eq, Ord)
 
 data AType = AType TypeName Term

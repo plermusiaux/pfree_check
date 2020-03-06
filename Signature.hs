@@ -25,67 +25,51 @@ module Signature (
   isFunc
 ) where
 
-import Datatypes (FunName(..), TypeName, Constructor(..), Function(..), Signature(..), Term(..), AType(..))
-import Data.List ( foldl )
-import Data.Maybe
+import Datatypes (FunName, TypeName, Constructor(..), Function(..), Signature(..), Term(..), AType(..))
+import Data.List ( find )
+import Data.Either
 
 _funName (Constructor f _ _) = f
+_Cdomain (Constructor _ d _) = d
+_Crange (Constructor _ _ r) = r
+
+_Fdomain (Function _ d _) = d
+_Frange (Function _ _ r) = r
 
 _typeName (AType s _) = s
 _pfree (AType _ p) = p
 
-getterF :: (Function -> Maybe a) -> Signature -> FunName -> a
-getterF get (Signature _ funs) f = try (foldl (wrap get) Nothing funs)
+getFunction :: Signature -> FunName -> Function
+getFunction (Signature _ funs) f = try (find isF funs)
   where try (Just r) = r
         try Nothing = error (show f ++ " is not declared")
-        wrap get Nothing g = get g
-        wrap _ j _ = j
+        isF (Function g _ _) = f == g
 
-getter :: (Constructor -> Maybe a) -> (Function -> Maybe a) -> Signature -> FunName -> a
-getter getC getF (Signature ctors funs) f = try (foldl (wrap getC) (foldl (wrap getF) Nothing funs) ctors)
-  where try (Just r) = r
-        try Nothing = error (show f ++ " is not declared")
-        wrap get Nothing g = get g
-        wrap _ j _ = j
+getter :: (Constructor -> a) -> (Function -> a) -> Signature -> FunName -> a
+getter getC getF (Signature ctors funs) f = unpack (find isF eithers)
+  where unpack (Just r) = either getC getF r
+        unpack Nothing = error (show f ++ " is not declared")
+        eithers = (map Left ctors) ++ (map Right funs)
+        isF (Left (Constructor g _ _)) = f == g
+        isF (Right (Function g  _ _)) = f == g
 
 domain :: Signature -> FunName -> [TypeName]
-domain sig f = getter getC getF sig f
-  where getC (Constructor g d _)
-          | f == g    = Just d
-          | otherwise = Nothing
-        getF (Function g d _)
-          | f == g    = Just (map _typeName d)
-          | otherwise = Nothing
+domain sig f = getter _Cdomain ((map _typeName)._Fdomain) sig f
 
 range :: Signature -> FunName -> TypeName
-range sig f = getter getC getF sig f
-  where getC (Constructor g _ r)
-          | f == g    = Just r
-          | otherwise = Nothing
-        getF (Function g _ r)
-          | f == g    = Just (_typeName r)
-          | otherwise = Nothing
-
-aDomain :: Signature -> FunName -> [AType]
-aDomain sig f = getterF get sig f
-  where get (Function g d _)
-          | f == g    = Just d
-          | otherwise = Nothing
-
-aRange :: Signature -> FunName -> AType
-aRange sig f = getterF get sig f
-  where get (Function g _ r)
-          | f == g    = Just r
-          | otherwise = Nothing
-
-pfree :: Signature -> FunName -> Term
-pfree sig f = getterF get sig f
-  where get (Function g _ r)
-          | f == g    = Just (_pfree r)
-          | otherwise = Nothing
+range sig f = getter _Crange (_typeName._Frange) sig f
 
 arity :: Signature -> FunName -> Int
 arity sig f = length (domain sig f)
+
+aDomain :: Signature -> FunName -> [AType]
+aDomain sig f = _Fdomain (getFunction sig f)
+
+aRange :: Signature -> FunName -> AType
+aRange sig f = _Frange (getFunction sig f)
+
+pfree :: Signature -> FunName -> Term
+pfree sig f = _pfree (aRange sig f)
 
 ctorsOfRange :: Signature -> TypeName -> [FunName]
 ctorsOfRange (Signature ctors _) ty = map _funName (filter hasRangeTy ctors)
