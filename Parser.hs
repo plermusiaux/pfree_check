@@ -68,7 +68,7 @@ term = try (Appl <$> funName <*> parens (termSum `sepBy` comma))
        <|> Anti <$> (bang >> term)
        <|> mkVar <$> varName
        <|> parens termSum
-  where mkVar name = Var name -- Unknown Bottom
+  where mkVar name = AVar name Unknown
 
 rule :: Parser Rule
 rule = mkRule <$> termSum <*> arrow <*> term

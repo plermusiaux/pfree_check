@@ -40,7 +40,6 @@ removePlusses (Appl f ps) = S.map (Appl f) subterms                       --S1
   where subterms = foldl buildSet (S.singleton []) (reverse ps)
         buildSet sl t = S.fold (S.union . (buildList t)) S.empty sl
         buildList t l = S.map (flip (:) l) (removePlusses t)
-removePlusses v@(Var _) = S.singleton v
 removePlusses v@(AVar _ _) = S.singleton v
 removePlusses Bottom = S.empty
 removePlusses a@(Alias x p) = S.singleton a
@@ -52,7 +51,7 @@ complement sig p1 p2 = p1 \\ p2
     alias x Bottom = Bottom
     alias x t = Alias x t
 
-    u \\ (Var _) = Bottom                                                 --M1
+    u \\ (AVar _ _) = Bottom                                              --M1
     u \\ Bottom = u                                                       --M2
     Plus q1 q2 \\ p = plus (q1 \\ p) (q2 \\ p)                            --M3
 --    (Var x) \\ p@(Appl g ps) = alias x (sum [pattern f \\ p | f <- fs])
@@ -67,8 +66,8 @@ complement sig p1 p2 = p1 \\ p2
             someUnchanged = or (zipWith (==) ps pqs)
     (Compl v t) \\ u = v \\ (plus t u)                                    --P5
     v@(AVar x (AType s p)) \\ t
-        | null (getReach sig p (Reach s r) S.empty) = Bottom              --P6
-        | otherwise                                = Compl v t
+        | null (getReachableR sig p s r) = Bottom                         --P6
+        | otherwise                      = Compl v t
         where r = removePlusses t
     Alias x p1 \\ p2 = alias x (p1 \\ p2)
     p1 \\ Alias x p2 = p1 \\ p2
@@ -82,7 +81,8 @@ conjunction sig p1 p2 = p1 * p2
     u * Bottom = Bottom                                                   --E3
     (Plus u1 u2) * u = plus (u1 * u) (u2 * u)                             --S2
     u * (Plus u1 u2) = plus (u * u1) (u * u2)                             --S3
-    u * (Var _) = u                                                       --T1
+    u * (AVar x Unknown) = Alias x u
+    u * (AVar _ (AType s Bottom)) = u                                     --T1
     (AVar _ (AType s Bottom)) * u
         | hasType sig u s = u                                             --T2
         | otherwise       = Bottom
@@ -96,17 +96,16 @@ conjunction sig p1 p2 = p1 * p2
 --              pattern a = Appl a (map buildVar (domain sig a))
 --              buildVar si = AVar "_" (AType si p)
     (AVar _ (AType s p)) * (Appl f ts)
-        | s == range sig f = complement sig (Appl f tsXz) p               --P1
+        | s == range sig f = complement sig (Appl f zXts) p               --P1
         | otherwise        = Bottom
-        where tsXz = zipWith conjVar ts (domain sig f)
-              conjVar t s = (AVar "_" (AType s p)) * t
+        where zXts = zipWith conjVar ts (domain sig f)
+              conjVar t s = (AVar (VarName (show t)) (AType s p)) * t
     v1 * (Compl v2 t) = complement sig (v1 * v2) t                        --P2-3
     (Compl v t) * u = complement sig (v * u) t                            --P4
-
-    (Var x) * u = Alias x u
-    (Appl f ts) * (AVar _ (AType _ p)) = complement sig (Appl f tsXz) p
-        where tsXz = zipWith conjVar ts (domain sig f)
-              conjVar t s = t * (AVar (VarName (show t)) (AType s p))
+--    (Var x) * u = Alias x u
+--    (Appl f ts) * (AVar _ (AType _ p)) = complement sig (Appl f tsXz) p
+--        where tsXz = zipWith conjVar ts (domain sig f)
+--              conjVar t s = t * (AVar (VarName (show t)) (AType s p))
 
 
 aliasing :: Signature -> [Rule] -> [Rule]
@@ -116,13 +115,14 @@ replaceVariables :: Signature -> Rule -> [Rule]
 replaceVariables sig (Rule (Appl f ls) rhs) = map buildRule lterms
   where lterms = S.toList (removePlusses (Appl f subLterms))
         subLterms = zipWith conjVar ls (aDomain sig f)
-        conjVar t s = conjunction sig t (AVar (VarName (show t)) s)
+        conjVar t s = conjunction sig (AVar (VarName (show t)) s) t
         buildRule l = Rule l (replaceVar varMap rhs)
-          where varMap = getVarMap l
-                getVarMap (Alias x t) = M.singleton x t
-                getVarMap (Appl g ts) = M.unions (map getVarMap ts)
+          where varMap = getVarMap l ""
+                getVarMap (Alias x t) _ = M.singleton x t
+                getVarMap (Appl g ts) _ = M.unions (zipWith getVarMap ts (domain sig g))
+                getVarMap (AVar x _) s = M.singleton x (AVar x (AType s Bottom))
                 replaceVar m (Appl f ts) = Appl f (map (replaceVar m) ts)
-                replaceVar m (Var x) = m M.! x
+                replaceVar m (AVar x Unknown) = m M.! x
 
 -- return the semantics equivalent of a term
 buildEqui :: Signature -> Term -> Term
@@ -133,6 +133,7 @@ buildEqui sig t = t
 
 -- check that t X p reduces to Bottom
 check :: Signature -> Term -> Term -> Bool
+check sig t Bottom = True
 check sig t p@(Appl f _)
   | hasType sig t (range sig f) = trace ("checking term " ++ show t) (isBottom (conjunction sig t p))
   | otherwise                   = True
@@ -150,25 +151,25 @@ checkTRS sig rules = foldl accuCheck M.empty (aliasing sig rules)
 -- return a list of terms that do not satisfy the expected pattern-free property
 checkRule :: Signature -> Rule -> [Term]
 checkRule sig r@(Rule (Appl f ts) rhs)
-  | (p == Bottom) = checkComposition sig rhs
-  | otherwise     = trace ("checking rule " ++ show r) ((checkComposition sig rhs) ++ (checkPfree sig p (buildEqui sig rhs)))
+  | (p == Bottom) = checkCompliance sig rhs
+  | otherwise     = trace ("checking rule " ++ show r) ((checkCompliance sig rhs) ++ (checkPfree sig p (buildEqui sig rhs)))
   where p = pfree sig f
 
 -- check in a term that all arguments of a function call satisfy the expected pattern-free property
 -- return a list of terms that do not satisfy the expected pattern-free property
-checkComposition :: Signature -> Term -> [Term]
-checkComposition sig (Appl f ts)
-  | isFunc sig f = concatMap check (zip ts (aDomain sig f)) ++ subCheck
+checkCompliance :: Signature -> Term -> [Term]
+checkCompliance sig (Appl f ts)
+  | isFunc sig f = concatMap checkAType (zip ts (aDomain sig f)) ++ subCheck
   | otherwise    = subCheck
-  where check (t, (AType _ Bottom)) = []
-        check (t, (AType _ p)) = checkPfree sig p (buildEqui sig t)
-        subCheck = concatMap (checkComposition sig) ts
-checkComposition sig (Compl t _) = checkComposition sig t
-checkComposition sig (AVar _ _) = []
+  where checkAType (t, AType _ p) = checkPfree sig p (buildEqui sig t)
+        subCheck = concatMap (checkCompliance sig) ts
+checkCompliance sig (Compl t _) = checkCompliance sig t
+checkCompliance sig (AVar _ _) = []
 
 -- check that a term is p-free
 -- return a list of terms that do not satisfy the expected pattern-free property
 checkPfree :: Signature -> Term -> Term -> [Term]
+checkPfree sig Bottom t = []
 checkPfree sig p t@(Appl f ts)
   | check sig t p = subFails
   | otherwise     = t:subFails
@@ -210,8 +211,8 @@ getReach sig p (Reach s r) reach
   | otherwise                     = reachable (foldl accuReach (False, reach') (ctorsOfRange sig s))
   where r' | hasType sig p s = S.insert p r
            | otherwise       = r
-        isVar (Var _) = True
-        isVar _       = False
+        isVar (AVar _ _) = True
+        isVar _          = False
         reach' = S.insert (Reach s r') reach
         reachable (True, res) = res
         reachable (False, _ ) = S.empty
@@ -249,10 +250,10 @@ typeVariables sig rules = map (inferVarType sig) rules
 inferVarType :: Signature -> Rule -> Rule
 inferVarType sig (Rule lhs rhs) = Rule lhs (replaceVar varMap rhs)
   where replaceVar m (Appl f ts) = Appl f (map (replaceVar m) ts)
-        replaceVar m (Var x) = m M.! x
+        replaceVar m (AVar x Unknown) = m M.! x
         varMap = getVarMap M.empty lhs
           where getVarMap m (Appl f ts) = foldl getVarMap (updateMap ts f m) ts
                 getVarMap m _ = m
                 updateMap ts f m = foldl mapVariables m (zip ts (domain sig f))
-                  where mapVariables m ((Var x), s) = M.insert x (AVar x (AType s Bottom)) m
+                  where mapVariables m ((AVar x _), s) = M.insert x (AVar x (AType s Bottom)) m
                         mapVariables m _ = m

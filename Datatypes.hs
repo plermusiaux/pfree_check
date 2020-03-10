@@ -41,6 +41,7 @@ newtype TypeName = TypeName String
   deriving (Eq, Ord)
 
 data AType = AType TypeName Term
+           | Unknown
   deriving (Eq, Ord)
 
 data Constructor = Constructor FunName [TypeName] TypeName
@@ -53,7 +54,6 @@ data Signature = Signature [Constructor] [Function]
   deriving (Eq, Ord)
 
 data Term = Appl FunName [Term]
-          | Var VarName -- Term TypeName
           | Plus Term Term
           | Compl Term Term
           | Alias VarName Term
@@ -82,6 +82,7 @@ instance Show TypeName where
 instance Show AType where
   show (AType s Bottom) = show s
   show (AType s p) = show s ++ "[-" ++ show p ++ "]"
+  show Unknown = []
 
 parSep :: [String] -> String
 parSep ss = "(" ++ intercalate ", " ss ++ ")"
@@ -97,13 +98,14 @@ instance Show Signature where
 
 instance Show Term where
   show (Appl f ps) = show f ++ parSep (map show ps)
-  show (Var x) = show x -- ++ " : " ++ show s ++ "[-" ++ show p ++ "]"
   show (Plus p1 p2) = "(" ++ show p1 ++ " + " ++ show p2 ++ ")"
   show (Compl p1 p2) = "(" ++ show p1 ++ " \\ " ++ show p2 ++ ")"
   show (Alias x p) = show x ++ "@" ++ show p
   show (Anti p) = "!" ++ show p
   show Bottom = "⊥"
+  show (AVar x Unknown) = show x
   show (AVar x s) = show x ++ " : " ++ show s
+
 
 instance Show Rule where
   show (Rule lhs rhs) = show lhs ++ " -> " ++ show rhs
