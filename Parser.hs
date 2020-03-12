@@ -78,7 +78,7 @@ rules :: Parser [Rule]
 rules = many rule
 
 funType :: Parser ([AType], AType)
-funType = try (mkFType <$> (aType `sepBy` star) <*> (arrow >> aType))
+funType = try (mkFType <$> (aType `sepBy1` star) <*> (arrow >> aType))
           <|> mkEmptyType <$> aType
   where
     mkFType domain range = (domain, range)

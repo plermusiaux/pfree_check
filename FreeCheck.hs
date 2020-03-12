@@ -117,12 +117,14 @@ replaceVariables sig (Rule (Appl f ls) rhs) = map buildRule lterms
         subLterms = zipWith conjVar ls (aDomain sig f)
         conjVar t s = conjunction sig (AVar (VarName (show t)) s) t
         buildRule l = Rule l (replaceVar varMap rhs)
-          where varMap = getVarMap l ""
+          where varMap = getVarMap l (range sig f)
                 getVarMap (Alias x t) _ = M.singleton x t
                 getVarMap (Appl g ts) _ = M.unions (zipWith getVarMap ts (domain sig g))
                 getVarMap (AVar x _) s = M.singleton x (AVar x (AType s Bottom))
                 replaceVar m (Appl f ts) = Appl f (map (replaceVar m) ts)
-                replaceVar m (AVar x Unknown) = m M.! x
+                replaceVar m (AVar x Unknown)
+                  | M.member x m = m M.! x
+                  | otherwise    = error ("variable " ++ show x ++ " unknown")
 
 -- return the semantics equivalent of a term
 buildEqui :: Signature -> Term -> Term
@@ -137,6 +139,7 @@ check sig t Bottom = True
 check sig t p@(Appl f _)
   | hasType sig t (range sig f) = trace ("checking term " ++ show t) (isBottom (conjunction sig t p))
   | otherwise                   = True
+check sig t (Plus p1 p2) = (check sig t p1) && (check sig t p2)
 
 -- check TRS : alias the variables in the right term of each rule and call checkRule
 -- return a map of failed rule with the terms that do not satisfy the expected pattern-free property
@@ -209,7 +212,7 @@ getReach sig p (Reach s r) reach
   | (any isVar r')                = S.empty
   | (S.member (Reach s r') reach) = reach
   | otherwise                     = reachable (foldl accuReach (False, reach') (ctorsOfRange sig s))
-  where r' | hasType sig p s = S.insert p r
+  where r' | hasType sig p s = S.union r (removePlusses p) --S.insert p r
            | otherwise       = r
         isVar (AVar _ _) = True
         isVar _          = False

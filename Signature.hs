@@ -86,6 +86,7 @@ hasType sig t s = t # s
     Bottom # _ = False
     (AVar _ (AType s1 _)) # s2 = s1 == s2
     (Compl u _) # so = u # so
+    (Plus u1 u2) # so = u1 # so || u2 # so
 
 isFunc :: Signature -> FunName -> Bool
 isFunc (Signature _ funs) f = any isF funs
