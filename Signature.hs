@@ -22,12 +22,14 @@ module Signature (
   ctorsOfRange,
   ctorsOfSameRange,
   hasType,
+  typeCheck,
   isFunc
 ) where
 
 import Datatypes (FunName, TypeName, Constructor(..), Function(..), Signature(..), Term(..), AType(..))
 import Data.List ( find )
 import Data.Either
+import Data.Maybe
 
 _funName (Constructor f _ _) = f
 _Cdomain (Constructor _ d _) = d
@@ -87,6 +89,22 @@ hasType sig t s = t # s
     (AVar _ (AType s1 _)) # s2 = s1 == s2
     (Compl u _) # so = u # so
     (Plus u1 u2) # so = u1 # so || u2 # so
+
+typeCheck :: Signature -> Term -> TypeName -> Term
+typeCheck sig t s = case (t # s) of
+  Nothing      -> t
+  Just (v, si) -> error (show v ++ " does not match expected type " ++ show si)
+  where
+    u@(Appl f tl) # so
+      | (range sig f /= so) = Just (u, so)
+      | otherwise           = fromMaybe Nothing (find isJust (zipWith (#) tl (domain sig f)))
+    (Alias _ u) # so = u # so
+    Bottom # so = Just (Bottom, so)
+    u@(AVar _ (AType s1 _)) # s2
+      | s1 /= s2  = Just (u, s2)
+      | otherwise = Nothing
+    (Compl u _) # so = u # so
+    (Plus u1 u2) # so = maybe (u2 # so) Just (u1 # so)
 
 isFunc :: Signature -> FunName -> Bool
 isFunc (Signature _ funs) f = any isF funs

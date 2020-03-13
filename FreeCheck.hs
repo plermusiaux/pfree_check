@@ -116,8 +116,8 @@ replaceVariables sig (Rule (Appl f ls) rhs) = map buildRule lterms
   where lterms = S.toList (removePlusses (Appl f subLterms))
         subLterms = zipWith conjVar ls (aDomain sig f)
         conjVar t s = conjunction sig (AVar (VarName (show t)) s) t
-        buildRule l = Rule l (replaceVar varMap rhs)
-          where varMap = getVarMap l (range sig f)
+        buildRule l = Rule l (typeCheck sig ((replaceVar varMap) rhs) s)
+          where varMap = getVarMap l s
                 getVarMap (Alias x t) _ = M.singleton x t
                 getVarMap (Appl g ts) _ = M.unions (zipWith getVarMap ts (domain sig g))
                 getVarMap (AVar x _) s = M.singleton x (AVar x (AType s Bottom))
@@ -125,6 +125,7 @@ replaceVariables sig (Rule (Appl f ls) rhs) = map buildRule lterms
                 replaceVar m (AVar x Unknown)
                   | M.member x m = m M.! x
                   | otherwise    = error ("variable " ++ show x ++ " unknown")
+                s = range sig f
 
 -- return the semantics equivalent of a term
 buildEqui :: Signature -> Term -> Term

@@ -27,7 +27,7 @@ removePlus : Term -> TermList [- plus(t1,t2) ]
 complement : Signature * Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] * Term -> Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ]
 
 generate : Signature -> Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ]
-build : String * Nat * TermList [- bot() ] -> Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ]
+build : String * Nat * TermList [- bot() ] -> Term [- bot() ]
 
 interleave : String * TermList [- bot() ] * TermList * TermRList [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] * Signature -> Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ]
 
@@ -40,15 +40,16 @@ RULES
 
 add(bot(), u) -> u
 add(u, bot()) -> u
-add(var(s1), var(s2)) -> plus(var(s1), var(s2))
-add(var(s1), appl(g,l2)) -> plus(var(s1), appl(g,l2))
-add(var(s1), plus(v1,v2)) -> plus(var(s1), plus(v1,v2))
-add(appl(f,l1), var(s2)) -> plus(appl(f,l1), var(s2))
-add(appl(f,l1), appl(g,l2)) -> plus(appl(f,l1), appl(g,l2))
-add(appl(f,l1), plus(v1,v2)) -> plus(appl(f,l1), plus(v1,v2))
-add(plus(u1,u2), var(s2)) -> plus(plus(u1,u2), var(s2))
-add(plus(u1,u2), appl(g,l2)) -> plus(plus(u1,u2), appl(g,l2))
-add(plus(u1,u2), plus(v1,v2)) -> plus(plus(u1,u2), plus(v1,v2))
+add(u\bot(), v\bot()) -> plus(u, v)
+// add(var(s1), var(s2)) -> plus(var(s1), var(s2))
+// add(var(s1), appl(g,l2)) -> plus(var(s1), appl(g,l2))
+// add(var(s1), plus(v1,v2)) -> plus(var(s1), plus(v1,v2))
+// add(appl(f,l1), var(s2)) -> plus(appl(f,l1), var(s2))
+// add(appl(f,l1), appl(g,l2)) -> plus(appl(f,l1), appl(g,l2))
+// add(appl(f,l1), plus(v1,v2)) -> plus(appl(f,l1), plus(v1,v2))
+// add(plus(u1,u2), var(s2)) -> plus(plus(u1,u2), var(s2))
+// add(plus(u1,u2), appl(g,l2)) -> plus(plus(u1,u2), appl(g,l2))
+// add(plus(u1,u2), plus(v1,v2)) -> plus(plus(u1,u2), plus(v1,v2))
 
 complement(sig, u, var(s)) -> bot()
 complement(sig, u, bot()) -> u
@@ -56,7 +57,7 @@ complement(sig, u, plus(v1,v2)) -> complement(sig, complement(sig,u,v1), v2)
 complement(sig, var(s), appl(f,l)) -> complement(sig, generate(sig), appl(f,l))
 complement(sig, bot(), appl(f, l)) -> bot()
 complement(sig, plus(u1,u2), appl(f,l)) -> add(complement(sig, u1, appl(f,l)), complement(sig, u2, appl(f,l)))
-complement(sig, appl(f,l1), appl(f,l2)) -> interleave(f, l1, l2, nil())
+complement(sig, appl(f,l1), appl(f,l2)) -> interleave(f, l1, l2, lin())
 complement(sig, appl(g,l1), appl(f,l2)) -> appl(f,l1)
 
 generate(sig(f,n,sig)) -> add(build(f,n,nil()), generate(sig))
@@ -66,12 +67,13 @@ build(f, z(), l) -> appl(f, l)
 build(f, s(n), l) -> build(f, n, cons(var(string()), l))
 
 interleave(f, nil(), nil(), lin()) -> bot()
-interleave(f, cons(u1,l1), cons(u2, nil()), l, sig) -> interleave(f, l1, nil(), snoc(complement(sig,u1,u2), l1), sig)
-interleave(f, cons(u1,l1), cons(u2,l2), l, sig) -> add(interleave(f, l1, nil(), snoc(complement(sig,u1,u2), l1), sig), interleave(f, l1, l2, snoc(u1,l), sig))
+interleave(f, cons(u1,l1), cons(u2, nil()), l, sig) -> interleave(f, l1, nil(), snoc(complement(sig,u1,u2), l), sig)
+interleave(f, cons(u1,l1), cons(u2,l2), l, sig) -> add(interleave(f, l1, nil(), snoc(complement(sig,u1,u2), l), sig), interleave(f, l1, l2, snoc(u1,l), sig))
 interleave(f, l1, nil(), snoc(bot(), l), sig) -> bot()
-interleave(f, l1, nil(), snoc(var(s), l), sig) -> interleave(f, cons(var(s), l1), nil(), l, sig)
-interleave(f, l1, nil(), snoc(appl(g,tl), l), sig) -> interleave(f, cons(appl(g,tl), l1), nil(), l, sig)
-interleave(f, l1, nil(), snoc(plus(u1,u2), l), sig) -> interleave(f, cons(plus(u1,u2), l1), nil(), l, sig)
+interleave(f, l1, nil(), snoc(u\bot(), l), sig) -> interleave(f, cons(u, l1), nil(), l, sig)
+// interleave(f, l1, nil(), snoc(var(s), l), sig) -> interleave(f, cons(var(s), l1), nil(), l, sig)
+// interleave(f, l1, nil(), snoc(appl(g,tl), l), sig) -> interleave(f, cons(appl(g,tl), l1), nil(), l, sig)
+// interleave(f, l1, nil(), snoc(plus(u1,u2), l), sig) -> interleave(f, cons(plus(u1,u2), l1), nil(), l, sig)
 interleave(f, l1, nil(), lin(), sig) -> appl(f,l1)
 
 
