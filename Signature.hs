@@ -23,7 +23,8 @@ module Signature (
   ctorsOfSameRange,
   hasType,
   typeCheck,
-  isFunc
+  isFunc,
+  typePfreeSig
 ) where
 
 import Datatypes (FunName, TypeName, Constructor(..), Function(..), Signature(..), Term(..), AType(..))
@@ -80,6 +81,10 @@ ctorsOfRange (Signature ctors _) ty = map _funName (filter hasRangeTy ctors)
 ctorsOfSameRange :: Signature -> FunName -> [FunName]
 ctorsOfSameRange sig f = ctorsOfRange sig (range sig f)
 
+isFunc :: Signature -> FunName -> Bool
+isFunc (Signature _ funs) f = any isF funs
+  where isF (Function g _ _) = f==g
+
 hasType :: Signature -> Term -> TypeName -> Bool
 hasType sig t s = t # s
   where
@@ -106,6 +111,17 @@ typeCheck sig t s = case (t # s) of
     (Compl u _) # so = u # so
     (Plus u1 u2) # so = maybe (u2 # so) Just (u1 # so)
 
-isFunc :: Signature -> FunName -> Bool
-isFunc (Signature _ funs) f = any isF funs
-  where isF (Function g _ _) = f==g
+typePfreeSig :: Signature -> Signature
+typePfreeSig sig@(Signature ctors funs) = Signature ctors tFuns
+  where tFuns = map typePfreeFun funs
+        typePfreeFun (Function f d r) = (Function f td tr)
+          where tr = typeP r
+                td = map typeP d
+                typeP (AType s p) = AType s (p # s)
+                  where
+                    (Appl g tl) # _ = Appl g (zipWith (#) tl (domain sig g))
+                    Bottom # _ = Bottom
+                    (AVar x Unknown) # so = AVar x (AType so Bottom)
+                    (Compl u v) # so = Compl (u # so) (v # so)
+                    (Plus u1 u2) # so = Plus (u1 # so) (u2 # so)
+                    v@(AVar x (AType _ _)) # _ = v

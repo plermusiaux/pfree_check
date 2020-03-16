@@ -70,7 +70,7 @@ complement sig p1 p2 = p1 \\ p2
         | otherwise                      = Compl v t
         where r = removePlusses t
     Alias x p1 \\ p2 = alias x (p1 \\ p2)
-    p1 \\ Alias x p2 = p1 \\ p2
+--    p1 \\ Alias x p2 = p1 \\ p2
 
 -------------------------------------------------------------------------------
 
@@ -81,7 +81,7 @@ conjunction sig p1 p2 = p1 * p2
     u * Bottom = Bottom                                                   --E3
     (Plus u1 u2) * u = plus (u1 * u) (u2 * u)                             --S2
     u * (Plus u1 u2) = plus (u * u1) (u * u2)                             --S3
-    u * (AVar x Unknown) = Alias x u
+    (AVar y s) * (AVar x Unknown) = Alias x (AVar x s)
     u * (AVar _ (AType s Bottom)) = u                                     --T1
     (AVar _ (AType s Bottom)) * u
         | hasType sig u s = u                                             --T2
@@ -145,11 +145,12 @@ check sig t (Plus p1 p2) = (check sig t p1) && (check sig t p2)
 -- check TRS : alias the variables in the right term of each rule and call checkRule
 -- return a map of failed rule with the terms that do not satisfy the expected pattern-free property
 checkTRS :: Signature -> [Rule] -> M.Map Rule [Term]
-checkTRS sig rules = foldl accuCheck M.empty (aliasing sig rules)
-  where accuCheck m rule
+checkTRS sig rules = foldl accuCheck M.empty (aliasing tSig rules)
+  where tSig = typePfreeSig sig
+        accuCheck m rule
           | null fails = m
           | otherwise  = M.insert rule fails m
-          where fails = checkRule sig rule
+          where fails = checkRule tSig rule
 
 -- check rule : check that the right term satisfies the expected pattern-free properties
 -- return a list of terms that do not satisfy the expected pattern-free property
