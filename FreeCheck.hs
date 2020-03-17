@@ -81,7 +81,7 @@ conjunction sig p1 p2 = p1 * p2
     u * Bottom = Bottom                                                   --E3
     (Plus u1 u2) * u = plus (u1 * u) (u2 * u)                             --S2
     u * (Plus u1 u2) = plus (u * u1) (u * u2)                             --S3
-    (AVar y s) * (AVar x Unknown) = Alias x (AVar x s)
+    (AVar y s) * (AVar x Unknown) = Alias x (AVar x s)    -- HC: used in replaceVariables
     u * (AVar _ (AType s Bottom)) = u                                     --T1
     (AVar _ (AType s Bottom)) * u
         | hasType sig u s = u                                             --T2
@@ -111,6 +111,11 @@ conjunction sig p1 p2 = p1 * p2
 aliasing :: Signature -> [Rule] -> [Rule]
 aliasing sig rules = concatMap (replaceVariables sig) rules
 
+-- HC
+-- for each variable on the lhs build a pattern which takes into account
+-- the annotaded type of the defined function
+-- and replaces the corresponding variable in the rhs by this pattern
+-- the obtained patterns are necessarily of the form ...
 replaceVariables :: Signature -> Rule -> [Rule]
 replaceVariables sig (Rule (Appl f ls) rhs) = map buildRule lterms
   where lterms = S.toList (removePlusses (Appl f subLterms))
@@ -138,7 +143,7 @@ buildEqui sig t = t
 check :: Signature -> Term -> Term -> Bool
 check sig t Bottom = True
 check sig t p@(Appl f _)
-  | hasType sig t (range sig f) = trace ("checking term " ++ show t) (isBottom (conjunction sig t p))
+  | hasType sig t (range sig f) = trace ("checking if BOTTOM: " ++ show t) (isBottom (conjunction sig t p))
   | otherwise                   = True
 check sig t (Plus p1 p2) = (check sig t p1) && (check sig t p2)
 
@@ -157,10 +162,11 @@ checkTRS sig rules = foldl accuCheck M.empty (aliasing tSig rules)
 checkRule :: Signature -> Rule -> [Term]
 checkRule sig r@(Rule (Appl f ts) rhs)
   | (p == Bottom) = checkCompliance sig rhs
-  | otherwise     = trace ("checking rule " ++ show r) ((checkCompliance sig rhs) ++ (checkPfree sig p (buildEqui sig rhs)))
+  | otherwise     = trace ("checking RULE " ++ show r) ((checkCompliance sig rhs) ++ (checkPfree sig p (buildEqui sig rhs)))
   where p = pfree sig f
 
 -- check in a term that all arguments of a function call satisfy the expected pattern-free property
+-- HC the term is of the form ... (because of the aliasing)
 -- return a list of terms that do not satisfy the expected pattern-free property
 checkCompliance :: Signature -> Term -> [Term]
 checkCompliance sig (Appl f ts)
@@ -168,10 +174,11 @@ checkCompliance sig (Appl f ts)
   | otherwise    = subCheck
   where checkAType (t, AType _ p) = checkPfree sig p (buildEqui sig t)
         subCheck = concatMap (checkCompliance sig) ts
-checkCompliance sig (Compl t _) = checkCompliance sig t
+checkCompliance sig (Compl t u) = checkCompliance sig t   -- HC: not u instead of t?
 checkCompliance sig (AVar _ _) = []
 
 -- check that a term is p-free
+-- parameters: sig x pattern x term
 -- return a list of terms that do not satisfy the expected pattern-free property
 checkPfree :: Signature -> Term -> Term -> [Term]
 checkPfree sig Bottom t = []

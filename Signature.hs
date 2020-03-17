@@ -125,3 +125,6 @@ typePfreeSig sig@(Signature ctors funs) = Signature ctors tFuns
                     (Compl u v) # so = Compl (u # so) (v # so)
                     (Plus u1 u2) # so = Plus (u1 # so) (u2 # so)
                     v@(AVar x (AType _ _)) # _ = v
+
+
+
