@@ -111,11 +111,13 @@ conjunction sig p1 p2 = p1 * p2
 aliasing :: Signature -> [Rule] -> [Rule]
 aliasing sig rules = concatMap (replaceVariables sig) rules
 
--- HC
--- for each variable on the lhs build a pattern which takes into account
--- the annotaded type of the defined function
--- and replaces the corresponding variable in the rhs by this pattern
--- the obtained patterns are necessarily of the form ...
+-- compare each subterm of the lhs to its expected form,
+-- as defined by the annotated type of the function, such that
+-- we obtain for each variable on the lhs a pattern of the form x\r,
+-- with x an annotated variable and r a sum of contructor pattern,
+-- expressing its expected shape as induced by the annotated type.
+-- the corresponding variable in the rhs is then replaced by this pattern.
+-- the obtained patterns are qaddt (without Plus)
 replaceVariables :: Signature -> Rule -> [Rule]
 replaceVariables sig (Rule (Appl f ls) rhs) = map buildRule lterms
   where lterms = S.toList (removePlusses (Appl f subLterms))
@@ -140,6 +142,7 @@ buildEqui sig t@(Appl f ts)
 buildEqui sig t = t
 
 -- check that t X p reduces to Bottom
+-- with t a qaddt term and p a sum of constructor patterns
 check :: Signature -> Term -> Term -> Bool
 check sig t Bottom = True
 check sig t p@(Appl f _)
@@ -166,7 +169,7 @@ checkRule sig r@(Rule (Appl f ts) rhs)
   where p = pfree sig f
 
 -- check in a term that all arguments of a function call satisfy the expected pattern-free property
--- HC the term is of the form ... (because of the aliasing)
+-- parameters : Signature, Rhs term of a rule (should be a qaddt without Plus)
 -- return a list of terms that do not satisfy the expected pattern-free property
 checkCompliance :: Signature -> Term -> [Term]
 checkCompliance sig (Appl f ts)
@@ -181,7 +184,7 @@ checkCompliance sig (Compl t u) = checkCompliance sig t   -- HC: not u instead o
 checkCompliance sig (AVar _ _) = []
 
 -- check that a term is p-free
--- parameters: sig x pattern x term
+-- parameters: Signature, Pattern p (should be a sum of constructor patterns), Rhs term of a rule (should be a qaddt without Plus)
 -- return a list of terms that do not satisfy the expected pattern-free property
 checkPfree :: Signature -> Term -> Term -> [Term]
 checkPfree sig Bottom t = []
