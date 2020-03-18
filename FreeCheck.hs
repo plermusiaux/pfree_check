@@ -175,6 +175,9 @@ checkCompliance sig (Appl f ts)
   where checkAType (t, AType _ p) = checkPfree sig p (buildEqui sig t)
         subCheck = concatMap (checkCompliance sig) ts
 checkCompliance sig (Compl t u) = checkCompliance sig t   -- HC: not u instead of t?
+-- PL: no in practice there is a Compl in the rhs of a rule only when a variable has been "aliased" by this Compl (so this is theoritically useless)
+-- checkCompliance sig (Compl (AVar _ _) _) = [] -- would be a more appropriate definition (similarily as in checkPfree btw...)
+-- in doubt, if there is a function call, it should be in the left side of the Compl, so we still check the left side just in case...
 checkCompliance sig (AVar _ _) = []
 
 -- check that a term is p-free
