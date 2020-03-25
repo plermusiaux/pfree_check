@@ -23,7 +23,7 @@ FUNCTIONS
 
 add : Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] * Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] -> Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ]
 
-removePlus : Term -> TermList [- plus(t1,t2) ]
+removePlus : Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] -> TermList [- ( bot() + plus(t1,t2) ) ]
 complement : Signature * Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] * Term -> Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ]
 
 generate : Signature -> Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ]
@@ -31,10 +31,10 @@ build : String * Nat * TermList [- bot() ] -> Term [- bot() ]
 
 interleave : String * TermList [- bot() ] * TermList * TermRList [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] * Signature -> Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ]
 
-collectPlus : Term * TermList [- plus(t1,t2) ] -> TermList [- plus(t1,t2) ]
-split : String * TermList [- plus(t1,t2) ] * TermList * TermRList [- plus(t1,t2) ]  -> TermList [- plus(t1,t2) ]
-reverse : TermRList [- plus(t1,t2) ] * TermList [- plus(t1,t2) ] -> TermList [- plus(t1,t2) ]
-concat : TermList [- plus(t1,t2) ] * TermList [- plus(t1,t2) ]  -> TermList [- plus(t1,t2) ]
+collectPlus : Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] * TermList [- ( bot() + plus(t1,t2) ) ] -> TermList [- ( bot() + plus(t1,t2) ) ]
+split : String * TermList [- ( bot() + plus(t1,t2) ) ] * TermList [- bot() ] * TermRList [- ( bot() + plus(t1,t2) ) ]  -> TermList [- ( bot() + plus(t1,t2) ) ]
+reverse : TermRList [- ( bot() + plus(t1,t2) ) ] * TermList [- ( bot() + plus(t1,t2) ) ] -> TermList [- ( bot() + plus(t1,t2) ) ]
+concat : TermList [- ( bot() + plus(t1,t2) ) ] * TermList [- ( bot() + plus(t1,t2) ) ]  -> TermList [- ( bot() + plus(t1,t2) ) ]
 
 RULES
 
@@ -89,7 +89,7 @@ collectPlus(appl(f, tl), l) -> concat(split(f, nil(), tl, lin()),l)
 collectPlus(var(s), l) -> cons(var(s),l)
 collectPlus(bot(), l) -> l
 
-reverse(snoc(t,rl), l) -> reverse(rl, cons(t,l))
+reverse(snoc(t,rl), l) -> reverse(rl, cons(t, l))
 reverse(lin(), l) -> l
 
 concat(cons(u,l1), l2) -> cons(u,concat(l1,l2))
