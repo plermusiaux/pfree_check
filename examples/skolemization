@@ -1,0 +1,43 @@
+CONSTRUCTORS
+
+string : String
+
+predicate : String * Term -> Formula
+and : Formula * Formula -> Formula
+or : Formula * Formula -> Formula
+exists : String * Formula -> Formula
+forall : String * Formula -> Formula
+
+tVar : Var -> Term
+const : String -> Term
+apply : Term * Term -> Term
+concat : Term * Term -> Term
+skolem : String * VarList -> Term
+
+var : String -> Var
+
+varNil : VarList
+varCons : Var * VarList -> VarList
+
+Functions
+
+skolemization : Formula * VarList -> Formula [- exists(s, p) ]
+replaceVarF : Formula * Term -> Formula
+replaceVarT : Term * Term -> Term
+
+RULES
+
+skolemization( predicate(s,t), l ) -> predicate(s,t)
+skolemization( and(p1,p2), l ) -> and( skolemization(p1,l), skolemization(p2,l) )
+skolemization( or(p1,p2), l ) -> or( skolemization(p1,l), skolemization(p2,l) )
+skolemization( exists(s,p), l ) -> skolemization(replaceVarF(p,skolem(s,l)))
+skolemization( forall(s,p), l ) -> forall(s,skolemization(p,varCons(var(s),l)))
+replaceVarF( predicate(s,t), skl ) -> predicate(s, replaceVarT(t,skl))
+replaceVarF( and(p1,p2), skl ) -> and( replaceVarF(p1,skl), replaceVarF(p2,skl) )
+replaceVarF( or(p1,p2), skl ) -> or( replaceVarF(p1,skl), replaceVarF(p2,skl) )
+replaceVarF( exists(s,p), skl ) -> exists(s, replaceVarF(p,skl))
+replaceVarF( forall(s,p), skl ) -> forall(s, replaceVarF(p,skl))
+replaceVarT( tVar(var(s)), skolem(s,l)) -> skolem(s,l)
+replaceVarT( apply(t1,t2), skl ) -> apply( replaceVarT(t1, skl), replaceVarT(t2,skl) )
+replaceVarT( concat (t1,t2), skl ) -> concat( replaceVarT(t1, skl), replaceVarT(t2,skl) )
+replaceVarT( t, skl ) -> t
