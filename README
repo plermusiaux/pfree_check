@@ -1,0 +1,18 @@
+Implementation of a method to verify pattern elimination in CTRS
+
+Please see https://hal.inria.fr/hal-02476012/ for more details
+
+Compilation instruction:
+$ ghc Main
+
+Execution instruction:
+The execution take a path towards a file to parse and analyze
+$ ./Main example_file
+
+The execution returns a map of not semantics preserving rules of the CTRS
+with terms, which ground semantics are included in the deep semantics of the
+right-hand side, but that do not satisfy the pattern-free property required
+by the left-hand side.
+
+You can create your own example files for testing.
+Do not hesitate to look at existing example files for syntax guidance.
