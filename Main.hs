@@ -1,7 +1,9 @@
-import Datatypes
+import Datatypes 
 import Signature (pfree)
 import FreeCheck (checkTRS)
 import Parser
+
+import Data.Maybe (fromJust)
 
 import Examples (flatten, flatten_fail, removePlus0_fail, skolemization)
 import Control.Monad.IO.Class ()
@@ -58,11 +60,11 @@ main = do
     unsafeCastTo HTMLSelectElement =<<
     getElementByIdUnsafe doc "example-selector"
   on checkButton click $
-    do Just inputText <- TextArea.getValue inputArea
-       setInnerHTML outputArea (Just (run inputText))
+    do inputText <- TextArea.getValue inputArea
+       setInnerHTML outputArea (run inputText)
        return ()
   on exampleSelector change $
     do name <- Select.getValue exampleSelector
-       TextArea.setValue inputArea (lookup name examples)
-  TextArea.setValue inputArea (Just flatten)
+       TextArea.setValue inputArea (fromJust (lookup name examples))
+  TextArea.setValue inputArea flatten
   return ()
