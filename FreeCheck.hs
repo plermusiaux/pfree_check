@@ -2,7 +2,6 @@
 
 module FreeCheck (checkTRS) where
 
-import Debug.Trace
 import Data.List ( tails, inits )
 import qualified Data.Vector as V
 import qualified Data.Set as S
@@ -146,7 +145,7 @@ buildEqui sig t = t
 check :: Signature -> Term -> Term -> Bool
 check sig t Bottom = True
 check sig t p@(Appl f _)
-  | hasType sig t (range sig f) = trace ("checking if BOTTOM: " ++ show t) (isBottom (conjunction sig t p))
+  | hasType sig t (range sig f) = isBottom (conjunction sig t p)
   | otherwise                   = True
 check sig t (Plus p1 p2) = (check sig t p1) && (check sig t p2)
 
@@ -165,7 +164,7 @@ checkTRS sig rules = foldl accuCheck M.empty (aliasing tSig rules)
 checkRule :: Signature -> Rule -> [Term]
 checkRule sig r@(Rule (Appl f ts) rhs)
   | (p == Bottom) = checkCompliance sig rhs
-  | otherwise     = trace ("checking RULE " ++ show r) ((checkCompliance sig rhs) ++ (checkPfree sig p (buildEqui sig rhs)))
+  | otherwise     = (checkCompliance sig rhs) ++ (checkPfree sig p (buildEqui sig rhs))
   where p = pfree sig f
 
 -- check in a term that all arguments of a function call satisfy the expected pattern-free property
@@ -192,13 +191,13 @@ checkPfree sig p t@(Appl f ts)
   | check sig t p = subFails
   | otherwise     = t:subFails
   where subFails = concatMap (checkPfree sig p) ts
-checkPfree sig p t@(AVar _ (AType s q)) = trace ("checking AVar " ++ show t) (S.toList (S.filter ncheck reachables))
+checkPfree sig p t@(AVar _ (AType s q)) = S.toList (S.filter ncheck reachables)
   where reachables = S.map buildComplement (getReachable sig q s)
         buildComplement (Reach s' p')
           | null p'   = (AVar "_" (AType s' q))
           | otherwise = Compl (AVar "_" (AType s' q)) (sumTerm (S.toList p'))
         ncheck t = not (check sig t p)
-checkPfree sig p t@(Compl (AVar _ (AType s q)) r) = trace ("checking Compl " ++ show t) (S.toList (S.filter ncheck reachables))
+checkPfree sig p t@(Compl (AVar _ (AType s q)) r) = S.toList (S.filter ncheck reachables)
   where reachables = S.map buildComplement (getReachableR sig q s (removePlusses r))
         buildComplement (Reach s' p')
           | null p'   = (AVar "_" (AType s' q))
