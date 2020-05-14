@@ -1,0 +1,22 @@
+CONSTRUCTORS
+
+c1 : s2 * s1 -> s1
+c2 : s3 -> s1
+
+c3 : s1 -> s2
+c4 : s3 -> s2
+
+c5 : s3 -> s3
+c6 : s3
+
+FUNCTIONS
+
+f : s1 -> s1 [- c1(c4(x), y) ]
+g : s2 -> s2 [- c4(x) ]
+
+RULES
+
+f(c1(x,y)) -> c1(g(x), f(y))
+f(c2(z)) -> c2(z)
+g(c3(y)) -> c3(f(y))
+g(c4(z)) -> c3(c2(z))
