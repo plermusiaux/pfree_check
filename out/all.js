@@ -66173,7 +66173,7 @@ function h$$Y3()
   var f = a.d1;
   d["addEventListener"](f, e, b);
   h$p2(c, h$$Y4);
-  h$r1 = "CONSTRUCTORS\n\ntrue : Bool\nfalse : Bool\n\ncons : Expr * List -> List\nnil : List\n\nbool : Bool -> Expr\nlist : List -> Expr\n\nFUNCTIONS\n\nflattenE : Expr -> Expr [- cons(list(l1),l2) ]\nflattenL : List -> List [- cons(list(l1),l2) ]\nconcat : List * List -> List\n\nRULES\n\nflattenE(bool(b)) -> bool(b)\nflattenE(list(l)) -> list(flattenL(l))\n\nflattenL(cons(bool(b),l)) -> cons(bool(b),flattenL(l))\nflattenL(cons(list(l1),l2)) -> concat(flattenL(l1),flattenL(l2))\nflattenL(l) -> nil()\n\nconcat(cons(e,l1),l2) -> cons(e,concat(l1,l2))\nconcat(l1,l2) -> l2";
+  h$r1 = "CONSTRUCTORS\n\ntrue : Bool\nfalse : Bool\n\ncons : Expr * List -> List\nnil : List\n\nbool : Bool -> Expr\nlist : List -> Expr\n\nFUNCTIONS\n\nflattenE : Expr -> Expr [- cons(list(l1),l2) ]\nflattenL : List -> List [- cons(list(l1),l2) ]\nconcat : List * List -> List\n\nRULES\n\nflattenE(bool(b)) -> bool(b)\nflattenE(list(l)) -> list(flattenL(l))\n\nflattenL(cons(bool(b),l)) -> cons(bool(b),flattenL(l))\nflattenL(cons(list(l1),l2)) -> flattenL(concat(l1,l2))\nflattenL(l) -> nil()\n\nconcat(cons(e,l1),l2) -> cons(e,concat(l1,l2))\nconcat(l1,l2) -> l2";
   return h$rs();
 };
 function h$$Y2()
