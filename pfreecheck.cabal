@@ -6,7 +6,7 @@ cabal-version:       >=1.10
 
 executable pfreecheck
   main-is:             Main.hs
-  build-depends:       base, containers, vector, mtl, parsec, criterion, deepseq, directory
+  build-depends:       base, containers, vector, mtl, parsec, criterion, deepseq, directory, random
   default-language:    Haskell2010
   ghc-options:         -threaded -O2 -rtsopts -with-rtsopts=-N
-  other-modules: Datatypes, FreeCheck, Signature, Parser
+  other-modules: Datatypes, FreeCheck, Generator, Signature, Parser

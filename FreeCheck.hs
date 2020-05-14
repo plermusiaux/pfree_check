@@ -1,6 +1,6 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, DeriveGeneric, DeriveAnyClass #-}
 
-module FreeCheck (checkTRS) where
+module FreeCheck (checkTRS, getReachable) where
 
 import Data.List ( tails, inits )
 import qualified Data.Vector as V
@@ -8,6 +8,9 @@ import qualified Data.Set as S
 import qualified Data.Map as M
 import Datatypes
 import Signature
+
+import GHC.Generics (Generic)
+import Control.DeepSeq
 
 --------------------------------- From Algo: ----------------------------------
 
@@ -207,7 +210,7 @@ checkPfree sig p t@(Compl (AVar _ (AType s q)) r) = S.toList (S.filter ncheck re
 -------------------------------- getReachable: --------------------------------
 
 data Reach = Reach TypeName (S.Set Term)
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Generic, NFData)
 
 -- Burn After Reading
 --instance Show Reach where

@@ -2,11 +2,13 @@
 
 import Datatypes
 import FreeCheck
+import Generator
 import Parser
 import System.Environment (getArgs)
 import Criterion.Main
 import System.Directory (getDirectoryContents, doesFileExist)
 import System.Exit (exitFailure)
+import System.Random
 import Data.Either (partitionEithers)
 import System.IO (hPutStrLn, stderr)
 import Control.DeepSeq (deepseq)
@@ -29,13 +31,26 @@ getModules = do
     Right modules ->
       return (zip files modules)
 
-makeBenchmarks :: [(FilePath, Module)] -> [Benchmark]
-makeBenchmarks namedModules = map makeBench namedModules
-  where makeBench (name, Module sig trs) = bench name $ nf (checkTRS sig) trs
+getRandomModules :: [(Int, Module)]
+getRandomModules = map genMod [13, 29, 31, 37]
+  where genMod i = (i, generate (mkStdGen i) 5 5 25)
+
+getRandomReaches :: (Signature, [(Int, Term)])
+getRandomReaches = (sig, map gen [7, 11, 17, 21])
+  where gen i = (i, generateP (mkStdGen i) cs 5)
+        sig@(Signature cs _) = generateBlankSig 5 2
+
+makeBenchmarks :: [(FilePath, Module)] -> [(Int, Module)] -> (Signature, [(Int, Term)]) -> [Benchmark]
+makeBenchmarks namedModules rModules (sig,rReaches) = (map makeMBench namedModules) ++
+                                                      (map makeRMBench rModules) ++
+                                                      (map makeRRBench rReaches)
+  where makeMBench (name, Module sigM trs) = bench name $ nf (checkTRS sigM) trs
+        makeRMBench (i, Module sigM trs) = bench ("check random seed " ++ show i) $ nf (checkTRS sigM) trs
+        makeRRBench (i, p) = bench ("getReachable random seed " ++ show i) $ nf (getReachable sig p) (TypeName "s1")
 
 main = do
   modules <- getModules
-  modules `deepseq` defaultMain (makeBenchmarks modules)
+  modules `deepseq` defaultMain (makeBenchmarks modules getRandomModules getRandomReaches)
 
 --main = do
 --  [filename] <- getArgs
