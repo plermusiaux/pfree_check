@@ -22,7 +22,7 @@ generateP seed cs d = Appl rC (map genSub rBsl)
         genSub (seedi, bi, si) = generatePattern seedi cs (d-1) bi si
 
 generate :: RandomGen g => g -> Int -> Int -> Int -> Module
-generate seed ar d rules = Module sig (generateTRS sig s2 (d`div`2) rules)
+generate seed ar d rules = Module sig (generateTRS sig s2 (2*d`div`3) rules)
   where (s1, s2) = split seed
         sig = generateSig s1 ar d
 

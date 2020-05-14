@@ -33,12 +33,13 @@ getModules = do
 
 getRandomModules :: [(Int, Module)]
 getRandomModules = map genMod [13, 29, 31, 37]
-  where genMod i = (i, generate (mkStdGen i) 5 5 25)
+  where genMod i = (i, generate (mkStdGen i) 4 5 25) -- arity = 4, depth = 5, nb_rules = 25
+--nb_sort = 2, depth_rhs = 2/3*depth, depth_q = 2/3*depth (function annotation rhs)
 
 getRandomReaches :: (Signature, [(Int, Term)])
 getRandomReaches = (sig, map gen [7, 11, 17, 21])
-  where gen i = (i, generateP (mkStdGen i) cs 5)
-        sig@(Signature cs _) = generateBlankSig 5 2
+  where gen i = (i, generateP (mkStdGen i) cs 6) -- depth = 6
+        sig@(Signature cs _) = generateBlankSig 4 2 -- arity = 4, nb_sort = 2
 
 makeBenchmarks :: [(FilePath, Module)] -> [(Int, Module)] -> (Signature, [(Int, Term)]) -> [Benchmark]
 makeBenchmarks namedModules rModules (sig,rReaches) = (map makeMBench namedModules) ++
