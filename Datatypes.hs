@@ -35,7 +35,8 @@ import Control.DeepSeq
 
 {- Datatypes -}
 
-newtype VarName = VarName String
+data VarName = VarName String
+             | NoName
   deriving (Eq, Ord, Generic, NFData)
 
 newtype FunName = FunName String
@@ -76,6 +77,7 @@ data Module = Module Signature [Rule]
 
 instance Show VarName where
   show (VarName x) = x
+  show NoName = "_"
 
 instance Show FunName where
   show (FunName x) = x

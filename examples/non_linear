@@ -1,0 +1,20 @@
+CONSTRUCTORS
+
+c : S2 * S2 -> S1
+d : S1 * S1 -> S1
+
+a : S2
+b : S2
+
+e : S1
+
+FUNCTIONS
+
+f : S1 -> S1 [- c(a(), b()) ]
+g : S1 -> S2
+
+RULES
+
+f(c(x, y)) -> c(x, x)
+f(d(x, y)) -> c(g(x), g(x))
+f(e()) -> e()
