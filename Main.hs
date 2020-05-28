@@ -33,13 +33,17 @@ getModules = do
 
 getRandomModules :: [(Int, Module)]
 getRandomModules = map genMod [13, 29, 31, 37]
-  where genMod i = (i, generate (mkStdGen i) 4 5 25) -- arity = 4, depth = 5, nb_rules = 25
---nb_sort = 2, depth_rhs = 2/3*depth, depth_q = 2/3*depth (function annotation rhs)
+  where genMod i = (i, Module sig (genTRS s2 sig))
+          where (s1, s2) = split (mkStdGen i)
+                sig = genSig s1
+        (cs, sorts) = generateBlankSig 4 2                    -- arity = 4, nb_sort = 2
+        genSig g = Signature cs (generateFunc g 6 4 cs sorts) -- depth = 6, depth_annotation = 4
+        genTRS g sig = generateTRS sig g 3 25                 -- depth_rhs = 3, nb_rules = 25
 
 getRandomReaches :: (Signature, [(Int, Term)])
-getRandomReaches = (sig, map gen [7, 11, 17, 21])
-  where gen i = (i, generateP (mkStdGen i) cs 6) -- depth = 6
-        sig@(Signature cs _) = generateBlankSig 4 2 -- arity = 4, nb_sort = 2
+getRandomReaches = (Signature cs [], map gen [7, 11, 17, 21])
+  where gen i = (i, generateP (mkStdGen i) cs 8) -- depth = 8
+        (cs, _) = generateBlankSig 4 2 -- arity = 4, nb_sort = 2
 
 makeBenchmarks :: [(FilePath, Module)] -> [(Int, Module)] -> (Signature, [(Int, Term)]) -> [Benchmark]
 makeBenchmarks namedModules rModules (sig,rReaches) = (map makeMBench namedModules) ++
@@ -51,7 +55,9 @@ makeBenchmarks namedModules rModules (sig,rReaches) = (map makeMBench namedModul
 
 main = do
   modules <- getModules
-  modules `deepseq` defaultMain (makeBenchmarks modules getRandomModules getRandomReaches)
+  (modules, rModules, rReaches) `deepseq` defaultMain (makeBenchmarks modules rModules rReaches)
+  where rModules = getRandomModules
+        rReaches = getRandomReaches
 
 --main = do
 --  [filename] <- getArgs

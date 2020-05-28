@@ -1,4 +1,9 @@
-module Generator (generate, generateBlankSig, generateP) where
+module Generator (
+  generate,
+  generateBlankSig,
+  generateFunc,
+  generateTRS,
+  generateP) where
 
 import Datatypes
 import Signature
@@ -6,8 +11,8 @@ import Signature
 import qualified Data.Map as M
 import System.Random
 
-generateBlankSig :: Int -> Int -> Signature
-generateBlankSig ar nb = Signature constructors []
+generateBlankSig :: Int -> Int -> ([Constructor], [TypeName])
+generateBlankSig ar nb = (constructors, sorts)
   where constructors = concatMap (generateConst ar sorts) sorts
         sorts = [ TypeName ("s" ++ (show i)) | i <- [1..nb] ]
 
@@ -30,7 +35,7 @@ generateSig :: RandomGen g => g -> Int -> Int -> Signature
 generateSig seed ar d = Signature constructors functions 
   where sorts = [ TypeName ("s" ++ (show i)) | i <- [1..nb] ]
         constructors = concatMap (generateConst ar sorts) sorts
-        functions = generateFunc seed d constructors sorts
+        functions = generateFunc seed d (2*d`div`3) constructors sorts
         nb = 2
 
 generateConst :: Int -> [TypeName] -> TypeName -> [Constructor]
@@ -45,11 +50,11 @@ generateDomain ar i sorts = map (sorts!!) (map f [1..ar])
   where f k = (i `mod` (nb^k)) `div` (nb^(k-1))
         nb = length sorts
 
-generateFunc :: RandomGen g => g -> Int -> [Constructor] -> [TypeName] -> [Function]
-generateFunc seed d cs sorts = (Function (FunName "f") [AType sort Bottom] (AType sort p)) : fs
+generateFunc :: RandomGen g => g -> Int -> Int -> [Constructor] -> [TypeName] -> [Function]
+generateFunc seed dp dq cs sorts = (Function (FunName "f") [AType sort Bottom] (AType sort p)) : fs
   where sort = sorts!!0
-        p = generatePattern seed cs d True sort
-        fs = generateCrossFunc seed (2*d`div`3) cs sorts
+        p = generatePattern seed cs dp True sort
+        fs = generateCrossFunc seed dq cs sorts
 
 generateCrossFunc :: RandomGen g => g -> Int -> [Constructor] -> [TypeName] -> [Function]
 generateCrossFunc seed d cs sorts = map createFunc l
