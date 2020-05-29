@@ -178,6 +178,8 @@ negativeNF = "\
 \nnf(not(or(p1, p2))) -> and(nnf(not(p1)), nnf(not(p2)))\n\
 \nnf(not(exists(s, p))) -> forall(s, nnf(not(p)))\n\
 \nnf(not(forall(s, p))) -> exists(s, nnf(not(p)))\n\
+\nnf(not(not(p))) -> nnf(p)\n\
+\nnf(not(impl(p1, p2))) -> and(nnf(p1), nnf(not(p2)))\n\
 \nnf(impl(p1, p2)) -> or(nnf(not(p1)), nnf(p2))\n\
 \nnf(and(p1, p2)) -> and(nnf(p1), nnf(p2))\n\
 \nnf(or(p1, p2)) -> or(nnf(p1), nnf(p2))\n\
