@@ -1,0 +1,40 @@
+CONSTRUCTORS
+
+string : String
+
+not : Formula -> Formula
+predicate : String * Term -> Formula
+and : Formula * Formula -> Formula
+or : Formula * Formula -> Formula
+impl : Formula * Formula -> Formula
+exists : String * Formula -> Formula
+forall : String * Formula -> Formula
+
+tVar : Var -> Term
+const : String -> Term
+apply : Term * Term -> Term
+concat : Term * Term -> Term
+
+var : String -> Var
+
+varNil : VarList
+varCons : Var * VarList -> VarList
+
+Functions
+
+nnf : Formula -> Formula [- (impl(p1,p2) + not(and(p1,p2)) + not(or(p1,p2)) + not(forall(s,p)) + not(exists(s,p)) + not(not(p))) ]
+// nnf : Formula -> Formula [- (impl(p1,p2) + not(!predicate(s))) ]
+
+RULES
+
+nnf(predicate(s,t)) -> predicate(s,t)
+nnf(not(predicate(s,t))) -> not(predicate(s,t))
+nnf(not(and(p1, p2))) -> or(nnf(not(p1)), nnf(not(p2)))
+nnf(not(or(p1, p2))) -> and(nnf(not(p1)), nnf(not(p2)))
+nnf(not(exists(s, p))) -> forall(s, nnf(not(p)))
+nnf(not(forall(s, p))) -> exists(s, nnf(not(p)))
+nnf(impl(p1, p2)) -> or(nnf(not(p1)), nnf(p2))
+nnf(and(p1, p2)) -> and(nnf(p1), nnf(p2))
+nnf(or(p1, p2)) -> or(nnf(p1), nnf(p2))
+nnf(exists(s, p)) -> exists(s, nnf(p))
+nnf(forall(s, p)) -> forall(s, nnf(p))
