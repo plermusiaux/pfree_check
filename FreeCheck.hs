@@ -4,9 +4,9 @@ module FreeCheck (checkTRS) where
 
 import Debug.Trace
 import Data.List ( tails, inits )
-import qualified Data.Vector as V
-import qualified Data.Set as S
+import Data.Maybe
 import qualified Data.Map as M
+import qualified Data.Set as S
 import Datatypes
 import Signature
 
@@ -21,6 +21,11 @@ interleave :: [a] -> [a] -> [[a]]
 interleave [] [] = []
 interleave xs ys = zipWith3 glue (inits xs) ys (tails (tail xs))
   where glue xs x ys = xs ++ x : ys
+
+alias :: VarName -> Term -> Term
+alias NoName t = t
+alias x Bottom = Bottom
+alias x t = Alias x t
 
 plus :: Term -> Term -> Term
 plus Bottom u = u                                                         --A1
@@ -48,9 +53,6 @@ removePlusses a@(Alias x p) = S.singleton a
 complement :: Signature -> Term -> Term -> Term
 complement sig p1 p2 = p1 \\ p2
   where
-    alias x Bottom = Bottom
-    alias x t = Alias x t
-
     u \\ (AVar _ _) = Bottom                                              --M1
     u \\ Bottom = u                                                       --M2
     Plus q1 q2 \\ p = plus (q1 \\ p) (q2 \\ p)                            --M3
@@ -65,9 +67,9 @@ complement sig p1 p2 = p1 \\ p2
       where pqs = zipWith (\\) ps qs
             someUnchanged = or (zipWith (==) ps pqs)
     (Compl v t) \\ u = v \\ (plus t u)                                    --P5
-    v@(AVar x (AType s p)) \\ t
-        | null (getReachableR sig p s r) = Bottom                         --P6
-        | otherwise                      = Compl v t
+    v@(AVar x sp@(AType s p)) \\ t
+        | isInstantiable sig p s r = Compl v t --Alias x (Compl (AVar NoName sp) t)
+        | otherwise                = Bottom                               --P6
         where r = removePlusses t
     Alias x p1 \\ p2 = alias x (p1 \\ p2)
 --    p1 \\ Alias x p2 = p1 \\ p2
@@ -82,9 +84,16 @@ conjunction sig p1 p2 = p1 * p2
     (Plus u1 u2) * u = plus (u1 * u) (u2 * u)                             --S2
     u * (Plus u1 u2) = plus (u * u1) (u * u2)                             --S3
     (AVar y s) * (AVar x Unknown) = Alias x (AVar x s)    -- HC: used in replaceVariables
+    v@(AVar x (AType s1 p1)) * w@(AVar y (AType s2 p2))     -- Generalization of T1/T2 for variables
+        | s1 /= s2     = Bottom
+        | p1 == Bottom = alias x w
+        | p2 == Bottom = v
+        | p1 == p2     = v
+--        | otherwise    = (AVar x (AType s1 (Plus p1 p2)))
+-- This should never happen, check null (getReachable sig (plus p1 p2) s1), if it does...
     u * (AVar _ (AType s Bottom)) = u                                     --T1
-    (AVar _ (AType s Bottom)) * u
-        | hasType sig u s = u                                             --T2
+    (AVar x (AType s Bottom)) * u
+        | hasType sig u s = alias x u                                     --T2
         | otherwise       = Bottom
     Appl f ps * Appl g qs
         | f == g = appl f (zipWith (*) ps qs)                             --T3
@@ -95,17 +104,24 @@ conjunction sig p1 p2 = p1 * p2
 --        where fs = ctorsOfRange sig s
 --              pattern a = Appl a (map buildVar (domain sig a))
 --              buildVar si = AVar "_" (AType si p)
-    (AVar _ (AType s p)) * (Appl f ts)
-        | s == range sig f = complement sig (Appl f zXts) p               --P1
+    (AVar x (AType s p)) * (Appl f ts)
+        | s == range sig f = complement sig (alias x (Appl f zXts)) p     --P1
         | otherwise        = Bottom
         where zXts = zipWith conjVar ts (domain sig f)
-              conjVar t s = (AVar (VarName (show t)) (AType s p)) * t
+              conjVar t si = (AVar NoName (AType si p)) * t
+    (Appl f ts) * (AVar x (AType s p))
+        | s == range sig f = complement sig (alias x (Appl f tXzs)) p
+        | otherwise        = Bottom
+        where tXzs = zipWith conjVar (domain sig f) ts
+              conjVar si t = t * (AVar NoName (AType si p))
     v1 * (Compl v2 t) = complement sig (v1 * v2) t                        --P2-3
     (Compl v t) * u = complement sig (v * u) t                            --P4
 --    (Var x) * u = Alias x u
 --    (Appl f ts) * (AVar _ (AType _ p)) = complement sig (Appl f tsXz) p
 --        where tsXz = zipWith conjVar ts (domain sig f)
 --              conjVar t s = t * (AVar (VarName (show t)) (AType s p))
+--
+    (Alias x t) * u = alias x (t * u)
 
 
 aliasing :: Signature -> [Rule] -> [Rule]
@@ -122,7 +138,7 @@ replaceVariables :: Signature -> Rule -> [Rule]
 replaceVariables sig (Rule (Appl f ls) rhs) = map buildRule lterms
   where lterms = S.toList (removePlusses (Appl f subLterms))
         subLterms = zipWith conjVar ls (aDomain sig f)
-        conjVar t s = conjunction sig (AVar (VarName (show t)) s) t
+        conjVar t s = conjunction sig (AVar NoName s) t
         buildRule l = Rule l (typeCheck sig ((replaceVar varMap) rhs) s)
           where varMap = getVarMap l s
                 getVarMap (Alias x t) _ = M.singleton x t
@@ -146,9 +162,22 @@ buildEqui sig t = t
 check :: Signature -> Term -> Term -> Bool
 check sig t Bottom = True
 check sig t p@(Appl f _)
-  | hasType sig t (range sig f) = trace ("checking if BOTTOM: " ++ show t) (isBottom (conjunction sig t p))
+  | hasType sig t (range sig f) = trace ("checking if BOTTOM: " ++ show t) (checkConj (conjunction sig t p))
   | otherwise                   = True
+  where checkConj Bottom = True
+        checkConj t = all (checkVariables sig) (removePlusses t)
 check sig t (Plus p1 p2) = (check sig t p1) && (check sig t p2)
+
+-- check if a term has conflicting instances of a variable
+-- if at least one variable has conflicting instances, returns true
+-- else false
+checkVariables :: Signature -> Term -> Bool
+checkVariables sig t = trace ("checking Variables in " ++ show t) (any isBottom (checkVar t))
+  where checkVar v@(AVar x@(VarName _) _) = M.singleton x v
+        checkVar (Alias x t) = M.singleton x t
+        checkVar t@(Compl (AVar x _) _) = M.singleton x t
+        checkVar (Appl f ts) = foldl (M.unionWith conj) M.empty (map checkVar ts)
+        conj u v = conjunction sig u v
 
 -- check TRS : alias the variables in the right term of each rule and call checkRule
 -- return a map of failed rule with the terms that do not satisfy the expected pattern-free property
@@ -221,45 +250,73 @@ getReachable sig p s = getReach sig p (Reach s S.empty) S.empty
 getReachableR :: Signature -> Term -> TypeName -> S.Set Term -> S.Set Reach
 getReachableR sig p s r = getReach sig p (Reach s r) S.empty
 
+isInstantiable :: Signature -> Term -> TypeName -> S.Set Term -> Bool
+isInstantiable sig p s r = not (null (getReachMin sig p (Reach s r) S.empty))
+
 -- abandon hope all ye who enter here
 getReach :: Signature -> Term -> Reach -> S.Set Reach -> S.Set Reach
-getReach sig p (Reach s r) reach
-  | (any isVar r')                = S.empty
-  | (S.member (Reach s r') reach) = reach
-  | otherwise                     = reachable (foldl accuReach (False, reach') (ctorsOfRange sig s))
-  where r' | hasType sig p s = S.union r (removePlusses p) --S.insert p r
-           | otherwise       = r
-        isVar (AVar _ _) = True
-        isVar _          = False
-        reach' = S.insert (Reach s r') reach
-        reachable (True, res) = res
-        reachable (False, _ ) = S.empty
-        accuReach (reachable, current) c
-          | implementable = (True, cReach)
-          | otherwise     = (reachable, current)
-          where (implementable, cReach) =  foldl accuSubReach (False, current) qc
-                -- compute Qc
-                qc = foldl getDist [V.replicate (length d) S.empty] r'
-                getDist tQc (Appl g ts)
-                  | c == g    = foldl accuDist [] tQc
-                  | otherwise = tQc
-                  where accuDist sQc q = V.toList (V.imap (distribute q) (V.fromList ts)) ++ sQc
-                        distribute q i t = V.accum (flip S.insert) q [(i,t)]
-                -- recursive calls on q in Qc
-                accuSubReach (qImpl, qReach) q = concatReaches (foldl computeReaches (True, [qReach]) sq)
-                  where sq = zipWith Reach d (V.toList q)
-                        -- optimized: no call when one of the qi as failed
-                        computeReaches (instantiated, lReach) qi
-                          | instantiated && (not (null subReach)) = (True, subReach:lReach)
-                          | otherwise                             = (False, [])
-                          where subReach = getReach sig p qi qReach
-                        -- optimized: only compute union when instantiable
-                        concatReaches (instantiated, lReach)
-                          | instantiated = (True, S.unions lReach)
-                          | otherwise    = (qImpl, qReach)
-                d = domain sig c
+getReach sig p (Reach s0 r0) reach
+  | any isVar r0 = S.empty
+  | otherwise    = computeReach s0 r0 reach
+  where pSet = removePlusses p
+        computeReach s r sReach
+          | S.member (Reach s r) sReach = sReach
+          | otherwise                   = fromMaybe S.empty (foldl accuReach Nothing (ctorsOfRange sig s))
+          where r' | hasType sig p s = S.union r pSet
+                   | otherwise       = r
+                reach' = S.insert (Reach s r) sReach
+                accuReach cReach c = foldl accuSubReach cReach (computeQc sig c r')
+                  where d = domain sig c
+                        accuSubReach qReach q
+                          | null tReach = qReach
+                          | otherwise   = Just tReach
+                          where tReach = foldl compute (fromMaybe reach' qReach) cRs
+                                cRs = zipWith computeReach d q
+                                compute iReach cR
+                                  | null iReach = iReach
+                                  | otherwise   = cR iReach
 
+-- stops when proof that the semantics is not empty
+getReachMin :: Signature -> Term -> Reach -> S.Set Reach -> S.Set Reach
+getReachMin sig p (Reach s0 r0) reach
+  | any isVar r0 = S.empty
+  | otherwise    = computeReach s0 r0 reach
+  where pSet = removePlusses p
+        computeReach s r sReach
+          | S.member (Reach s r) sReach = sReach
+          | otherwise                   = fromMaybe S.empty (foldl accuReach Nothing (ctorsOfRange sig s))
+          where r' | hasType sig p s = S.union r pSet
+                   | otherwise       = r
+                reach' = S.insert (Reach s r) sReach
+                accuReach m@(Just cReach) _ = m
+                accuReach Nothing         c = foldl accuSubReach Nothing (computeQc sig c r')
+                  where d = domain sig c
+                        accuSubReach m@(Just qReach) _ = m
+                        accuSubReach Nothing         q
+                          | null tReach = Nothing
+                          | otherwise   = Just tReach
+                          where tReach = foldl compute reach' cRs
+                                cRs = zipWith computeReach d q
+                                compute iReach cR
+                                  | null iReach = iReach
+                                  | otherwise   = cR iReach
 
+computeQc :: Signature -> FunName -> (S.Set Term) -> [[S.Set Term]]
+computeQc sig c r = foldl getDist [replicate (length d) S.empty] r
+  where getDist tQc (Appl g ts)
+          | c == g    = foldl accuDist [] tQc
+          | otherwise = tQc
+          where accuDist sQc q = (mapMaybe (distribute q) (zip [0..] ts)) ++ sQc
+                distribute q (i, t)
+                  | isVar t   = Nothing -- filter out variables to avoid empty semantics
+                  | otherwise = Just (pre ++ (S.insert t qi) : tail)
+                  where (pre, qi : tail) = splitAt i q
+        d = domain sig c
+
+isVar :: Term -> Bool
+isVar (AVar _ _)   = True
+isVar (Plus t1 t2) = (isVar t1) || (isVar t2)
+isVar _            = False
 
 ----------------------------- not used anymore --------------------------------
 typeVariables :: Signature -> [Rule] -> [Rule]
