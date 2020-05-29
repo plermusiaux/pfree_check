@@ -4,9 +4,9 @@ module FreeCheck (checkTRS) where
 
 import Debug.Trace
 import Data.List ( tails, inits )
-import qualified Data.Vector as V
-import qualified Data.Set as S
+import Data.Maybe
 import qualified Data.Map as M
+import qualified Data.Set as S
 import Datatypes
 import Signature
 
@@ -68,8 +68,8 @@ complement sig p1 p2 = p1 \\ p2
             someUnchanged = or (zipWith (==) ps pqs)
     (Compl v t) \\ u = v \\ (plus t u)                                    --P5
     v@(AVar x sp@(AType s p)) \\ t
-        | null (getReachableR sig p s r) = Bottom                         --P6
-        | otherwise                      = Compl v t --Alias x (Compl (AVar NoName sp) t)
+        | isInstantiable sig p s r = Compl v t --Alias x (Compl (AVar NoName sp) t)
+        | otherwise                = Bottom                               --P6
         where r = removePlusses t
     Alias x p1 \\ p2 = alias x (p1 \\ p2)
 --    p1 \\ Alias x p2 = p1 \\ p2
@@ -109,6 +109,11 @@ conjunction sig p1 p2 = p1 * p2
         | otherwise        = Bottom
         where zXts = zipWith conjVar ts (domain sig f)
               conjVar t si = (AVar NoName (AType si p)) * t
+    (Appl f ts) * (AVar x (AType s p))
+        | s == range sig f = complement sig (alias x (Appl f tXzs)) p
+        | otherwise        = Bottom
+        where tXzs = zipWith conjVar (domain sig f) ts
+              conjVar si t = t * (AVar NoName (AType si p))
     v1 * (Compl v2 t) = complement sig (v1 * v2) t                        --P2-3
     (Compl v t) * u = complement sig (v * u) t                            --P4
 --    (Var x) * u = Alias x u
@@ -245,45 +250,73 @@ getReachable sig p s = getReach sig p (Reach s S.empty) S.empty
 getReachableR :: Signature -> Term -> TypeName -> S.Set Term -> S.Set Reach
 getReachableR sig p s r = getReach sig p (Reach s r) S.empty
 
+isInstantiable :: Signature -> Term -> TypeName -> S.Set Term -> Bool
+isInstantiable sig p s r = not (null (getReachMin sig p (Reach s r) S.empty))
+
 -- abandon hope all ye who enter here
 getReach :: Signature -> Term -> Reach -> S.Set Reach -> S.Set Reach
-getReach sig p (Reach s r) reach
-  | (any isVar r')                = S.empty
-  | (S.member (Reach s r') reach) = reach
-  | otherwise                     = reachable (foldl accuReach (False, reach') (ctorsOfRange sig s))
-  where r' | hasType sig p s = S.union r (removePlusses p) --S.insert p r
-           | otherwise       = r
-        isVar (AVar _ _) = True
-        isVar _          = False
-        reach' = S.insert (Reach s r') reach
-        reachable (True, res) = res
-        reachable (False, _ ) = S.empty
-        accuReach (reachable, current) c
-          | implementable = (True, cReach)
-          | otherwise     = (reachable, current)
-          where (implementable, cReach) =  foldl accuSubReach (False, current) qc
-                -- compute Qc
-                qc = foldl getDist [V.replicate (length d) S.empty] r'
-                getDist tQc (Appl g ts)
-                  | c == g    = foldl accuDist [] tQc
-                  | otherwise = tQc
-                  where accuDist sQc q = V.toList (V.imap (distribute q) (V.fromList ts)) ++ sQc
-                        distribute q i t = V.accum (flip S.insert) q [(i,t)]
-                -- recursive calls on q in Qc
-                accuSubReach (qImpl, qReach) q = concatReaches (foldl computeReaches (True, [qReach]) sq)
-                  where sq = zipWith Reach d (V.toList q)
-                        -- optimized: no call when one of the qi as failed
-                        computeReaches (instantiated, lReach) qi
-                          | instantiated && (not (null subReach)) = (True, subReach:lReach)
-                          | otherwise                             = (False, [])
-                          where subReach = getReach sig p qi qReach
-                        -- optimized: only compute union when instantiable
-                        concatReaches (instantiated, lReach)
-                          | instantiated = (True, S.unions lReach)
-                          | otherwise    = (qImpl, qReach)
-                d = domain sig c
+getReach sig p (Reach s0 r0) reach
+  | any isVar r0 = S.empty
+  | otherwise    = computeReach s0 r0 reach
+  where pSet = removePlusses p
+        computeReach s r sReach
+          | S.member (Reach s r) sReach = sReach
+          | otherwise                   = fromMaybe S.empty (foldl accuReach Nothing (ctorsOfRange sig s))
+          where r' | hasType sig p s = S.union r pSet
+                   | otherwise       = r
+                reach' = S.insert (Reach s r) sReach
+                accuReach cReach c = foldl accuSubReach cReach (computeQc sig c r')
+                  where d = domain sig c
+                        accuSubReach qReach q
+                          | null tReach = qReach
+                          | otherwise   = Just tReach
+                          where tReach = foldl compute (fromMaybe reach' qReach) cRs
+                                cRs = zipWith computeReach d q
+                                compute iReach cR
+                                  | null iReach = iReach
+                                  | otherwise   = cR iReach
 
+-- stops when proof that the semantics is not empty
+getReachMin :: Signature -> Term -> Reach -> S.Set Reach -> S.Set Reach
+getReachMin sig p (Reach s0 r0) reach
+  | any isVar r0 = S.empty
+  | otherwise    = computeReach s0 r0 reach
+  where pSet = removePlusses p
+        computeReach s r sReach
+          | S.member (Reach s r) sReach = sReach
+          | otherwise                   = fromMaybe S.empty (foldl accuReach Nothing (ctorsOfRange sig s))
+          where r' | hasType sig p s = S.union r pSet
+                   | otherwise       = r
+                reach' = S.insert (Reach s r) sReach
+                accuReach m@(Just cReach) _ = m
+                accuReach Nothing         c = foldl accuSubReach Nothing (computeQc sig c r')
+                  where d = domain sig c
+                        accuSubReach m@(Just qReach) _ = m
+                        accuSubReach Nothing         q
+                          | null tReach = Nothing
+                          | otherwise   = Just tReach
+                          where tReach = foldl compute reach' cRs
+                                cRs = zipWith computeReach d q
+                                compute iReach cR
+                                  | null iReach = iReach
+                                  | otherwise   = cR iReach
 
+computeQc :: Signature -> FunName -> (S.Set Term) -> [[S.Set Term]]
+computeQc sig c r = foldl getDist [replicate (length d) S.empty] r
+  where getDist tQc (Appl g ts)
+          | c == g    = foldl accuDist [] tQc
+          | otherwise = tQc
+          where accuDist sQc q = (mapMaybe (distribute q) (zip [0..] ts)) ++ sQc
+                distribute q (i, t)
+                  | isVar t   = Nothing -- filter out variables to avoid empty semantics
+                  | otherwise = Just (pre ++ (S.insert t qi) : tail)
+                  where (pre, qi : tail) = splitAt i q
+        d = domain sig c
+
+isVar :: Term -> Bool
+isVar (AVar _ _)   = True
+isVar (Plus t1 t2) = (isVar t1) || (isVar t2)
+isVar _            = False
 
 ----------------------------- not used anymore --------------------------------
 typeVariables :: Signature -> [Rule] -> [Rule]
