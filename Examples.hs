@@ -12,7 +12,7 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
-module Examples (flatten, flatten_fail, removePlus0_fail, skolemization) where
+module Examples (flatten, flatten_fail, removePlus0_fail, skolemization, negativeNF, paper) where
 
 flatten = "\
 \CONSTRUCTORS\n\
@@ -141,4 +141,70 @@ skolemization = "\
 \replaceVarT( apply(t1,t2), skl ) -> apply( replaceVarT(t1, skl), replaceVarT(t2,skl) )\n\
 \replaceVarT( concat (t1,t2), skl ) -> concat( replaceVarT(t1, skl), replaceVarT(t2,skl) )\n\
 \replaceVarT( t, skl ) -> t"
+
+negativeNF = "\
+\CONSTRUCTORS\n\
+\\n\
+\string : String\n\
+\\n\
+\not : Formula -> Formula\n\
+\predicate : String * Term -> Formula\n\
+\and : Formula * Formula -> Formula\n\
+\or : Formula * Formula -> Formula\n\
+\impl : Formula * Formula -> Formula\n\
+\exists : String * Formula -> Formula\n\
+\forall : String * Formula -> Formula\n\
+\\n\
+\tVar : Var -> Term\n\
+\const : String -> Term\n\
+\apply : Term * Term -> Term\n\
+\concat : Term * Term -> Term\n\
+\\n\
+\var : String -> Var\n\
+\\n\
+\varNil : VarList\n\
+\varCons : Var * VarList -> VarList\n\
+\\n\
+\Functions\n\
+\\n\
+\nnf : Formula -> Formula [- (impl(p1,p2) + not(and(p1,p2)) + not(or(p1,p2)) + not(forall(s,p)) + not(exists(s,p)) + not(not(p))) ]\n\
+\// nnf : Formula -> Formula [- (impl(p1,p2) + not(!predicate(s))) ]\n\
+\\n\
+\RULES\n\
+\\n\
+\nnf(predicate(s,t)) -> predicate(s,t)\n\
+\nnf(not(predicate(s,t))) -> not(predicate(s,t))\n\
+\nnf(not(and(p1, p2))) -> or(nnf(not(p1)), nnf(not(p2)))\n\
+\nnf(not(or(p1, p2))) -> and(nnf(not(p1)), nnf(not(p2)))\n\
+\nnf(not(exists(s, p))) -> forall(s, nnf(not(p)))\n\
+\nnf(not(forall(s, p))) -> exists(s, nnf(not(p)))\n\
+\nnf(impl(p1, p2)) -> or(nnf(not(p1)), nnf(p2))\n\
+\nnf(and(p1, p2)) -> and(nnf(p1), nnf(p2))\n\
+\nnf(or(p1, p2)) -> or(nnf(p1), nnf(p2))\n\
+\nnf(exists(s, p)) -> exists(s, nnf(p))\n\
+\nnf(forall(s, p)) -> forall(s, nnf(p))"
+
+paper = "\
+\CONSTRUCTORS\n\
+\\n\
+\c1 : s2 * s1 -> s1\n\
+\c2 : s3 -> s1\n\
+\\n\
+\c3 : s1 -> s2\n\
+\c4 : s3 -> s2\n\
+\\n\
+\c5 : s3 -> s3\n\
+\c6 : s3\n\
+\\n\
+\FUNCTIONS\n\
+\\n\
+\f : s1 -> s1 [- c1(c4(x), y) ]\n\
+\g : s2 -> s2 [- c4(x) ]\n\
+\\n\
+\RULES\n\
+\\n\
+\f(c1(x,y)) -> c1(g(x), f(y))\n\
+\f(c2(z)) -> c2(z)\n\
+\g(c3(y)) -> c3(f(y))\n\
+\g(c4(z)) -> c3(c2(z))"
 
