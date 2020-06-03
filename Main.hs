@@ -30,13 +30,13 @@ getModules = do
       return (zip files modules)
 
 getRandomModules :: [(Int, Module)]
-getRandomModules = map genMod [13, 29, 37, 43]
+getRandomModules = map genMod [13, 19, 37, 43]
   where genMod i = (i, Module sig (genTRS s2 sig))
           where (s1, s2) = split (mkStdGen i)
                 sig = genSig s1
         (cs, sorts) = generateBlankSig 5 2                    -- arity = 5, nb_sort = 2
         genSig g = Signature cs (generateFunc g 6 4 cs sorts) -- depth = 6, depth_annotation = 4
-        genTRS g sig = generateTRS sig g 3 25                 -- depth_rhs = 3, nb_rules = 25
+        genTRS g sig = generateTRS sig g 4 25                 -- depth_rhs = 4, nb_rules = 25
 
 getRandomReaches :: (Signature, [(Int, Term)])
 getRandomReaches = (Signature cs [], map gen [7, 11, 17, 23])
