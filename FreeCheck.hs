@@ -84,11 +84,11 @@ conjunction sig p1 p2 = p1 * p2
     (Plus u1 u2) * u = plus (u1 * u) (u2 * u)                             --S2
     u * (Plus u1 u2) = plus (u * u1) (u * u2)                             --S3
     (AVar y s) * (AVar x Unknown) = Alias x (AVar x s)    -- HC: used in replaceVariables
-    v@(AVar x (AType s1 p1)) * w@(AVar y (AType s2 p2))     -- Generalization of T1/T2 for variables
+    v@(AVar x (AType s1 p1)) * (AVar y (AType s2 p2))     -- Generalization of T1/T2 for variables
         | s1 /= s2     = Bottom
-        | p1 == Bottom = alias x w
-        | p2 == Bottom = v
         | p1 == p2     = v
+        | p1 == Bottom = AVar x (AType s2 p2)
+        | p2 == Bottom = v
 --        | otherwise    = (AVar x (AType s1 (Plus p1 p2)))
 -- This should never happen, check isInstanciable sig (plus p1 p2) s1, if it does...
     u * (AVar _ (AType s Bottom)) = u                                     --T1
@@ -110,7 +110,7 @@ conjunction sig p1 p2 = p1 * p2
         where zXts = zipWith conjVar ts (domain sig f)
               conjVar t si = (AVar NoName (AType si p)) * t
     (Appl f ts) * (AVar x (AType s p))
-        | s == range sig f = complement sig (alias x (Appl f tXzs)) p
+        | s == range sig f = complement sig (Appl f tXzs) p
         | otherwise        = Bottom
         where tXzs = zipWith conjVar (domain sig f) ts
               conjVar si t = t * (AVar NoName (AType si p))
@@ -122,7 +122,6 @@ conjunction sig p1 p2 = p1 * p2
 --              conjVar t s = t * (AVar (VarName (show t)) (AType s p))
 --
     (Alias x t) * u = alias x (t * u)
-
 
 aliasing :: Signature -> [Rule] -> [Rule]
 aliasing sig rules = concatMap (replaceVariables sig) rules
