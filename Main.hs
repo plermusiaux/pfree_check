@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 import Datatypes
 import FreeCheck
 import Generator
@@ -51,7 +49,7 @@ makeBenchmarks namedModules rModules (sig,rReaches) = (map makeMBench namedModul
                                                       (map makeRRBench rReaches)
   where makeMBench (name, Module sigM trs) = bench name $ nf (checkTRS sigM) trs
         makeRMBench (i, Module sigM trs) = bench ("check random seed " ++ show i) $ nf (checkTRS sigM) trs
-        makeRRBench (i, p) = bench ("getReachable random seed " ++ show i) $ nf (getReachable sig p) (TypeName "s1")
+        makeRRBench (i, p) = bench ("getReachable random seed " ++ show i) $ nf (snd.(getReachable emptyCache sig p)) (TypeName "s1")
 
 main = do
   modules <- getModules
@@ -59,9 +57,3 @@ main = do
   where rModules = getRandomModules
         rReaches = getRandomReaches
 
---main = do
---  [filename] <- getArgs
---  s <- readFile filename
---  case parseModule filename s of
---    Left err -> putStrLn (show err)
---    Right (Module sig trs) -> print (checkTRS sig trs)
