@@ -77,17 +77,27 @@ rule = mkRule <$> termSum <*> arrow <*> term
 rules :: Parser [Rule]
 rules = many rule
 
-funType :: Parser ([AType], AType)
+funProfile :: Parser ([TypeName], TypeName, [([Term], Term)])
+funProfile = mkProfile <$> (funType `sepBy1` pipe)
+  where
+    mkProfile ((d, qs, (r, p)):l) = foldl buildProfile (d, r, [(qs, p)]) l
+    buildProfile (d, r, l) (d', qs, (r', p))
+      | d' == d && r' == r = (d, r, (qs, p):l)
+      | otherwise          = error "inconsistant function profile"
+
+funType :: Parser ([TypeName], [Term], (TypeName, Term))
 funType = try (mkFType <$> (aType `sepBy1` star) <*> (arrow >> aType))
           <|> mkEmptyType <$> aType
   where
-    mkFType domain range = (domain, range)
-    mkEmptyType range = ([], range)
+    mkFType domain range = (d, qs, range)
+      where (d, qs) = unzip domain
+    mkEmptyType range = ([], [], range)
 
-aType :: Parser AType
-aType = try (AType <$> typeName <*> (brackets (mfree >> term)))
+aType :: Parser (TypeName, Term)
+aType = try (mkAType <$> typeName <*> (brackets (mfree >> term)))
         <|> mkDefaultAType <$> typeName
-  where mkDefaultAType s = AType s Bottom
+  where mkDefaultAType s = (s, Bottom)
+        mkAType s p = (s, p)
 
 consType :: Parser ([TypeName], TypeName)
 consType = try (mkFType <$> (typeName `sepBy` star) <*> (arrow >> typeName))
@@ -104,8 +114,8 @@ constructors :: Parser [Constructor]
 constructors = many (try constructor)
 
 function :: Parser Function
-function = mkDecl <$> funName <*> (colon >> funType)
-  where mkDecl f (domain, range) = Function f domain range
+function = mkDecl <$> funName <*> (colon >> funProfile)
+  where mkDecl f (domain, range, profile) = Function f domain range profile
 
 functions :: Parser [Function]
 functions = many (try function)

@@ -49,15 +49,6 @@ data AType = AType TypeName Term
            | Unknown
   deriving (Eq, Ord, Generic, NFData)
 
-data Constructor = Constructor FunName [TypeName] TypeName
-  deriving (Eq, Ord, Generic, NFData)
-
-data Function = Function FunName [AType] AType
-  deriving (Eq, Ord, Generic, NFData)
-
-data Signature = Signature [Constructor] [Function]
-  deriving (Eq, Ord, Generic, NFData)
-
 data Term = Appl FunName [Term]
           | Plus Term Term
           | Compl Term Term
@@ -70,8 +61,17 @@ data Term = Appl FunName [Term]
 data Rule = Rule Term Term
   deriving (Eq, Ord, Generic, NFData)
 
+data Constructor = Constructor FunName [TypeName] TypeName
+  deriving (Generic, NFData)
+
+data Function = Function FunName [TypeName] TypeName [([Term], Term)]
+  deriving (Generic, NFData)
+
+data Signature = Signature [Constructor] [Function]
+  deriving (Generic, NFData)
+
 data Module = Module Signature [Rule]
-  deriving (Eq, Ord, Generic, NFData, Show)
+  deriving (Generic, NFData)
 
 {- Pretty Printing -}
 
@@ -97,7 +97,9 @@ instance Show Constructor where
   show (Constructor f tys ty) = show f ++ ": " ++ intercalate " * " (map show tys) ++ " -> " ++ show ty
 
 instance Show Function where
-  show (Function f d r) = show f ++ ": " ++ intercalate " * " (map show d) ++ " -> " ++ show r
+  show (Function f d r pr) = show f ++ ": " ++ intercalate " | " profiles
+    where profiles = map showProfile pr
+          showProfile (qs, p) = intercalate " * " (map show (zipWith AType d qs)) ++ " -> " ++ show (AType r p)
 
 instance Show Signature where
   show (Signature ctors funs) = show (ctors, funs)

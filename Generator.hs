@@ -51,7 +51,7 @@ generateDomain ar i sorts = map (sorts!!) (map f [1..ar])
         nb = length sorts
 
 generateFunc :: RandomGen g => g -> Int -> Int -> [Constructor] -> [TypeName] -> [Function]
-generateFunc seed dp dq cs sorts = (Function (FunName "f") [AType sort Bottom] (AType sort p)) : fs
+generateFunc seed dp dq cs sorts = (Function (FunName "f") [sort] sort [([Bottom], p)]) : fs
   where sort = sorts!!0
         p = generatePattern seed cs dp True sort
         fs = generateCrossFunc seed dq cs sorts
@@ -60,7 +60,7 @@ generateCrossFunc :: RandomGen g => g -> Int -> [Constructor] -> [TypeName] -> [
 generateCrossFunc seed d cs sorts = map createFunc l
   where n = length sorts
         l = zip [0..] (genSeedList seed (n^2-n))
-        createFunc (i, g) = Function (FunName f) [AType s1 Bottom] (AType s2 p)
+        createFunc (i, g) = Function (FunName f) [s1] s2 [([Bottom], p)]
           where (j, k) = i `divMod` (n-1)
                 s1 = sorts !! j
                 s2 = if k < j then (sorts !! k) else (sorts !! (k+1))

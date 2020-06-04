@@ -125,9 +125,6 @@ conjunction sig p1 p2 = p1 * p2
 --
     (Alias x t) * u = alias x (t * u)
 
-aliasing :: Signature -> [Rule] -> [Rule]
-aliasing sig rules = concatMap (replaceVariables sig) rules
-
 -- compare each subterm of the lhs to its expected form,
 -- as defined by the annotated type of the function, such that
 -- we obtain for each variable on the lhs a pattern of the form x\r,
@@ -135,10 +132,10 @@ aliasing sig rules = concatMap (replaceVariables sig) rules
 -- expressing its expected shape as induced by the annotated type.
 -- the corresponding variable in the rhs is then replaced by this pattern.
 -- the obtained patterns are qaddt (without Plus)
-replaceVariables :: Signature -> Rule -> [Rule]
-replaceVariables sig (Rule (Appl f ls) rhs) = map buildRule lterms
+replaceVariables :: Signature -> Rule -> [AType] -> [Rule]
+replaceVariables sig (Rule (Appl f ls) rhs) d = map buildRule lterms
   where lterms = S.toList (removePlusses (Appl f subLterms))
-        subLterms = zipWith conjVar ls (aDomain sig f)
+        subLterms = zipWith conjVar ls d
         conjVar t s = conjunction sig (AVar NoName s) t
         buildRule l = Rule l (typeCheck sig ((replaceVar varMap) rhs) s)
           where varMap = getVarMap l s
@@ -152,11 +149,22 @@ replaceVariables sig (Rule (Appl f ls) rhs) = map buildRule lterms
                 s = range sig f
 
 -- return the semantics equivalent of a term
-buildEqui :: Signature -> Term -> Term
-buildEqui sig t@(Appl f ts)
-  | isFunc sig f = AVar (VarName (show t)) (aRange sig f)
-  | otherwise    = Appl f (map (buildEqui sig) ts)
-buildEqui sig t = t
+buildEqui :: Cache -> Signature -> Term -> (Cache, Term)
+buildEqui c sig t@(Appl f ts)
+  | isFunc sig f = (c2, AVar (VarName (show t)) (AType (range sig f) p))
+  | otherwise    = (c1, Appl f equis)
+  where (c1, equis) = foldr buildSub (c, []) ts
+        buildSub t (cache, l) = (cache', t':l)
+          where (cache', t') = buildEqui cache sig t
+        (c2, p) = foldl accuCheck (c1, Bottom) (profile sig f)
+        accuCheck (cache, p) (qs, q)
+          | subFree   = (cache', plus p q)
+          | otherwise = (cache', p)
+          where (cache', subFree) = foldl subCheck (cache, True) (zip equis qs)
+        subCheck (cache, False) _ = (cache, False)
+        subCheck (cache, True) (t, p) = (cache', null fails)
+          where (cache', fails) = checkPfree cache sig p t
+buildEqui c _ t = (c, t)
 
 -- check that t X p reduces to Bottom
 -- with t a qaddt term and p a sum of constructor patterns
@@ -180,43 +188,31 @@ checkVariables sig t = any isBottom (checkVar t)
         checkVar (Appl f ts) = foldl (M.unionWith conj) M.empty (map checkVar ts)
         conj u v = conjunction sig u v
 
--- check TRS : alias the variables in the right term of each rule and call checkRule
+-- check TRS : call checkRule for each rule and concatenate the results
 -- return a map of failed rule with the terms that do not satisfy the expected pattern-free property
 checkTRS :: Signature -> [Rule] -> M.Map Rule [Term]
-checkTRS sig rules = snd (foldl accuCheck (emptyCache, M.empty) (aliasing tSig rules))
+checkTRS sig rules = snd (foldl accuCheck (emptyCache, M.empty) rules)
   where tSig = typePfreeSig sig
         accuCheck (c, m) rule
           | null fails = (c', m)
-          | otherwise  = (c', M.insert rule fails m)
+          | otherwise  = (c', M.union m fails)
           where (c', fails) = checkRule c tSig rule
 
--- check rule : check that the right term satisfies the expected pattern-free properties
--- return a list of terms that do not satisfy the expected pattern-free property
-checkRule :: Cache -> Signature -> Rule -> (Cache, [Term])
-checkRule c sig r@(Rule (Appl f ts) rhs)
-  | (p == Bottom) = (c1, ts1)
-  | otherwise     = (c2, ts1 ++ ts2)
-  where p = pfree sig f
-        (c1, ts1) = checkCompliance c sig rhs
-        (c2, ts2) = checkPfree c1 sig p (buildEqui sig rhs)
-
--- check in a term that all arguments of a function call satisfy the expected pattern-free property
--- parameters : Signature, Rhs term of a rule (should be a qaddt without Plus)
--- return a list of terms that do not satisfy the expected pattern-free property
-checkCompliance :: Cache -> Signature -> Term -> (Cache, [Term])
-checkCompliance c sig (Appl f ts)
-  | isFunc sig f = foldl accuCheck (cSub, sub) (zip ts (aDomain sig f))
-  | otherwise    = (cSub, sub)
-  where (cSub, sub) = foldl subCheck (c, []) ts
-        subCheck (cache, l) t = (cache', l ++ l')
-          where (cache', l') = checkCompliance cache sig t
-        accuCheck (cache, l) (t, AType _ p) = (cache', l ++ l')
-          where (cache', l') = checkPfree cache sig p (buildEqui sig t)
-checkCompliance c sig (Compl t u) = checkCompliance c sig t   -- HC: not u instead of t?
--- PL: no in practice there is a Compl in the rhs of a rule only when a variable has been "aliased" by this Compl (so this is theoritically useless)
--- checkCompliance sig (Compl (AVar _ _) _) = [] -- would be a more appropriate definition (similarily as in checkPfree btw...)
--- in doubt, if there is a function call, it should be in the left side of the Compl, so we still check the left side just in case...
-checkCompliance c sig (AVar _ _) = (c, [])
+-- check rule : for each profile of the head function symbol of the left hand side,
+-- alias the variables in the right hand side and build its semantics equivalent,
+-- then check that the term obtained verify the corresponding pattern-free property.
+-- return a list of terms that do not satisfy the expected pattern-free properties
+checkRule :: Cache -> Signature -> Rule -> (Cache, M.Map Rule [Term])
+checkRule c sig r@(Rule (Appl f _) _) = foldl accuCheck (c, M.empty) rules
+  where accuCheck (cache, m) (Rule lhs rhs, p)
+          | null fails = (cache2, m)
+          | otherwise  = (cache2, M.insert (Rule lhs equi) fails m)
+          where (cache1, equi) = buildEqui cache sig rhs
+                (cache2, fails) = checkPfree cache1 sig p equi
+        rules = concatMap buildRule (map buildDomain (profile sig f))
+        buildRule (ad, p) = zip (replaceVariables sig r ad) (repeat p)
+        buildDomain (qs, p) = (zipWith AType d qs, p)
+        d = domain sig f
 
 -- check that a term is p-free
 -- parameters: Signature, Pattern p (should be a sum of constructor patterns), Rhs term of a rule (should be a qaddt without Plus)
