@@ -33,8 +33,10 @@ interleave : String * TermList [- bot() ] * TermList * TermRList [- ( cons(bot()
 
 collectPlus : Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] * TermList [- ( bot() + plus(t1,t2) ) ] -> TermList [- ( bot() + plus(t1,t2) ) ]
 split : String * TermList [- ( bot() + plus(t1,t2) ) ] * TermList [- bot() ] * TermRList [- ( bot() + plus(t1,t2) ) ]  -> TermList [- ( bot() + plus(t1,t2) ) ]
-reverse : TermRList [- ( bot() + plus(t1,t2) ) ] * TermList [- ( bot() + plus(t1,t2) ) ] -> TermList [- ( bot() + plus(t1,t2) ) ]
-concat : TermList [- ( bot() + plus(t1,t2) ) ] * TermList [- ( bot() + plus(t1,t2) ) ]  -> TermList [- ( bot() + plus(t1,t2) ) ]
+reverse : TermRList [- bot() ] * TermList [- bot() ] -> TermList [- bot() ]
+        | TermRList [- plus(t1,t2) ] * TermList [- plus(t1,t2) ] -> TermList [- plus(t1,t2) ]
+concat : TermList [- bot() ] * TermList [- bot() ]  -> TermList [- bot() ]
+       | TermList [- plus(t1,t2) ] * TermList [- plus(t1,t2) ]  -> TermList [- plus(t1,t2) ]
 
 RULES
 
