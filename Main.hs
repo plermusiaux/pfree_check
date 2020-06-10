@@ -30,30 +30,42 @@ getModules = do
       return (zip files modules)
 
 getRandomModules :: [(Int, Module)]
-getRandomModules = map genMod [13, 19, 37, 43]
+getRandomModules = map genMod [11, 23, 29, 43]
   where genMod i = (i, Module sig (genTRS s2 sig))
           where (s1, s2) = split (mkStdGen i)
                 sig = genSig s1
-        (cs, sorts) = generateBlankSig 5 2                    -- arity = 5, nb_sort = 2
-        genSig g = Signature cs (generateFunc g 6 4 cs sorts) -- depth = 6, depth_annotation = 4
+        (cs, sorts) = generateBlankSig 6 2                    -- arity = 6, nb_sort = 2
+        genSig g = Signature cs (generateFunc g 6 6 cs sorts) -- depth = 6, depth_annotation = 6
         genTRS g sig = generateTRS sig g 4 25                 -- depth_rhs = 4, nb_rules = 25
 
 getRandomReaches :: (Signature, [(Int, Term)])
-getRandomReaches = (Signature cs [], map gen [7, 11, 17, 23])
-  where gen i = (i, generateP (mkStdGen i) cs 8) -- depth = 8
-        (cs, _) = generateBlankSig 5 2 -- arity = 5, nb_sort = 2
+getRandomReaches = (Signature cs [], map gen [13, 17, 37, 41])
+  where gen i = (i, generateP (mkStdGen i) cs 8)              -- depth = 8
+        (cs, _) = generateBlankSig 6 2                        -- arity = 6, nb_sort = 2
 
-makeBenchmarks :: [(FilePath, Module)] -> [(Int, Module)] -> (Signature, [(Int, Term)]) -> [Benchmark]
-makeBenchmarks namedModules rModules (sig,rReaches) = (map makeMBench namedModules) ++
-                                                      (map makeRMBench rModules) ++
-                                                      (map makeRRBench rReaches)
+getRandomPfree :: [(Int, Module)]
+getRandomPfree = map genMod [7, 19, 31, 51]
+  where genMod i = (i, Module sig (genTRS s2 sig))
+          where (s1, s2) = split (mkStdGen i)
+                sig = genSig s1
+        (cs, sorts) = generateBlankSig 6 2                    -- arity = 6, nb_sort = 2
+        genSig g = Signature cs (generateFunc g 5 5 cs sorts) -- depth = 5, depth_annotation = 5
+        genTRS g sig = generateTRS sig g 5 1                  -- depth_rhs = 5, nb_rules = 1
+
+makeBenchmarks :: [(FilePath, Module)] -> [(Int, Module)] -> (Signature, [(Int, Term)]) -> [(Int, Module)] -> [Benchmark]
+makeBenchmarks namedModules rModules (sig,rReaches) rPfree = (map makeMBench namedModules) ++
+                                                             (map makeRMBench rModules) ++
+                                                             (map makeRRBench rReaches) ++
+                                                             (map makePFBench rPfree)
   where makeMBench (name, Module sigM trs) = bench name $ nf (checkTRS sigM) trs
         makeRMBench (i, Module sigM trs) = bench ("check random seed " ++ show i) $ nf (checkTRS sigM) trs
-        makeRRBench (i, p) = bench ("getReachable random seed " ++ show i) $ nf (snd.(getReachable emptyCache sig p)) (TypeName "s1")
+        makeRRBench (i, p) = bench ("getReachable random seed " ++ show i) $ nf (getReachable sig p) (TypeName "s1")
+        makePFBench (i, Module sigM trs) = bench ("pFree random seed " ++ show i) $ nf (checkTRS sigM) trs
 
 main = do
   modules <- getModules
-  (modules, rModules, rReaches) `deepseq` defaultMain (makeBenchmarks modules rModules rReaches)
+  (modules, rModules, rReaches, rPfree) `deepseq` defaultMain (makeBenchmarks modules rModules rReaches rPfree)
   where rModules = getRandomModules
         rReaches = getRandomReaches
+        rPfree = getRandomPfree
 

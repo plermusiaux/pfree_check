@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, DeriveGeneric, DeriveAnyClass #-}
 
-module FreeCheck (checkTRS, getReachable, emptyCache) where
+module FreeCheck (checkTRS, checkPfree, getReachable) where
 
 import Data.List ( tails, inits )
 import Data.Maybe
