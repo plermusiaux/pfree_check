@@ -168,12 +168,10 @@ buildEqui c _ t = (c, t)
 -- with t a qaddt term and p a sum of constructor patterns
 check :: Signature -> Term -> Term -> Bool
 check _ _ Bottom = True
-check sig t p@(Appl f _)
-  | hasType sig t (range sig f) = trace ("checking if BOTTOM: " ++ show t) (checkConj (conjunction sig t p))
-  | otherwise                   = True
+check sig t p = trace ("checking if BOTTOM: " ++ show t ++ " X " ++ show p) (checkConj (conjunction sig t p))
   where checkConj Bottom = True
         checkConj t = all (checkVariables sig) (removePlusses t)
-check sig t (Plus p1 p2) = (check sig t p1) && (check sig t p2)
+-- check sig t (Plus p1 p2) = (check sig t p1) && (check sig t p2)
 
 -- check if a term has conflicting instances of a variable
 -- if at least one variable has conflicting instances, returns true
@@ -183,8 +181,7 @@ checkVariables sig t = trace ("checking Variables in " ++ show t) (any isBottom 
   where checkVar v@(AVar x@(VarName _) _) = M.singleton x v
         checkVar (Alias x t) = M.singleton x t
         checkVar t@(Compl (AVar x _) _) = M.singleton x t
-        checkVar (Appl f ts) = foldl (M.unionWith conj) M.empty (map checkVar ts)
-        conj u v = conjunction sig u v
+        checkVar (Appl f ts) = foldl (M.unionWith (conjunction sig)) M.empty (map checkVar ts)
 
 -- check TRS : call checkRule for each rule and concatenate the results
 -- return a map of failed rule with the terms that do not satisfy the expected pattern-free property
@@ -216,7 +213,7 @@ checkRule c sig r@(Rule (Appl f _) _) = foldl accuCheck (c, M.empty) rules
 -- parameters: Signature, Pattern p (should be a sum of constructor patterns), Rhs term of a rule (should be a qaddt without Plus)
 -- return a list of terms that do not satisfy the expected pattern-free property
 checkPfree :: Cache -> Signature -> Term -> Term -> (Cache, [Term])
-checkPfree c sig Bottom t = (c, [])
+checkPfree c _ Bottom _ = (c, [])
 checkPfree c sig p t@(Appl f ts)
   | check sig t p = (cSub, subFails)
   | otherwise       = (cSub, t:subFails)
