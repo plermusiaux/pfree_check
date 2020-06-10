@@ -170,12 +170,10 @@ buildEqui c _ t = (c, t)
 -- with t a qaddt term and p a sum of constructor patterns
 check :: Signature -> Term -> Term -> Bool
 check _ _ Bottom = True
-check sig t p@(Appl f _)
-  | hasType sig t (range sig f) = checkConj (conjunction sig t p)
-  | otherwise                   = True
+check sig t p = checkConj (conjunction sig t p)
   where checkConj Bottom = True
         checkConj t = all (checkVariables sig) (removePlusses t)
-check sig t (Plus p1 p2) = (check sig t p1) && (check sig t p2)
+-- check sig t (Plus p1 p2) = (check sig t p1) && (check sig t p2)
 
 -- check if a term has conflicting instances of a variable
 -- if at least one variable has conflicting instances, returns true
@@ -185,8 +183,7 @@ checkVariables sig t = any isBottom (checkVar t)
   where checkVar v@(AVar x@(VarName _) _) = M.singleton x v
         checkVar (Alias x t) = M.singleton x t
         checkVar t@(Compl (AVar x _) _) = M.singleton x t
-        checkVar (Appl f ts) = foldl (M.unionWith conj) M.empty (map checkVar ts)
-        conj u v = conjunction sig u v
+        checkVar (Appl f ts) = foldl (M.unionWith (conjunction sig)) M.empty (map checkVar ts)
 
 -- check TRS : call checkRule for each rule and concatenate the results
 -- return a map of failed rule with the terms that do not satisfy the expected pattern-free property
@@ -218,27 +215,37 @@ checkRule c sig r@(Rule (Appl f _) _) = foldl accuCheck (c, M.empty) rules
 -- parameters: Signature, Pattern p (should be a sum of constructor patterns), Rhs term of a rule (should be a qaddt without Plus)
 -- return a list of terms that do not satisfy the expected pattern-free property
 checkPfree :: Cache -> Signature -> Term -> Term -> (Cache, [Term])
-checkPfree c sig Bottom t = (c, [])
-checkPfree c sig p t@(Appl f ts)
-  | check sig t p = (cSub, subFails)
-  | otherwise       = (cSub, t:subFails)
-  where (cSub, subFails) = foldl accuCheck (c, []) ts
-        accuCheck (cache, l) t = (cache', l ++ l')
-          where (cache', l') = checkPfree cache sig p t
-checkPfree c sig p t@(AVar _ (AType s q)) = (c', S.toList (S.filter ncheck reachables))
-  where (c', reaches) = getReachable c sig q s
+checkPfree c _ Bottom _ = (c, [])
+checkPfree c@(Cache m) sig p t@(Appl f ts) = case M.lookup (t, p) m of
+  Just r -> (c, r)
+  Nothing
+    | check sig t p -> (Cache (M.insert (t, p) subFails m'), subFails)
+    | otherwise     -> (Cache (M.insert (t, p) (t:subFails) m'), t:subFails)
+    where (Cache m', subFails) = foldl accuCheck (c, []) ts
+          accuCheck (cache, l) t = (cache', l ++ l')
+            where (cache', l') = checkPfree cache sig p t
+checkPfree c@(Cache m) sig p t@(AVar _ (AType s q)) = case M.lookup (t', p) m of
+  Just r -> (c, r)
+  Nothing -> (Cache (M.insert (t', p) res m), res)
+  where reaches = getReachable sig q s
         reachables = S.map buildComplement reaches
         buildComplement (Reach s' p')
           | null p'   = (AVar "_" (AType s' q))
           | otherwise = Compl (AVar "_" (AType s' q)) (sumTerm p')
+        res = S.toList (S.filter ncheck reachables)
         ncheck r = not (check sig r p)
-checkPfree c sig p t@(Compl (AVar _ (AType s q)) r) = (c', S.toList (S.filter ncheck reachables))
-  where (c', reaches) = getReachableR c sig q s (removePlusses r)
+        t' = AVar NoName (AType s q)
+checkPfree c@(Cache m) sig p t@(Compl (AVar _ (AType s q)) r) = case M.lookup (t', p) m of
+  Just r -> (c, r)
+  Nothing -> (Cache (M.insert (t', p) res m), res)
+  where reaches = getReachableR sig q s (removePlusses r)
         reachables = S.map buildComplement reaches
         buildComplement (Reach s' p')
           | null p'   = (AVar "_" (AType s' q))
           | otherwise = Compl (AVar "_" (AType s' q)) (sumTerm p')
+        res = S.toList (S.filter ncheck reachables)
         ncheck r = not (check sig r p)
+        t' = AVar NoName (AType s q)
 
 -------------------------------- getReachable: --------------------------------
 
@@ -251,38 +258,42 @@ data Reach = Reach TypeName (S.Set Term)
 --                   | otherwise = "x : " ++ show s ++ " \\ (" ++ (concatMap show r) ++ ")"
 --
 
-data Cache = Cache (M.Map (Term, Reach) (S.Set Reach))
+data Cache = Cache (M.Map (Term, Term) [Term])
 
 emptyCache = Cache M.empty
 
-getReachable :: Cache -> Signature -> Term -> TypeName -> (Cache, S.Set Reach)
-getReachable c@(Cache m) sig p s = case M.lookup (p, reach) m of
-  Just a  -> (c, a)
-  Nothing -> (Cache (M.insert (p, reach) res m), res)
-  where res = getReach c sig p reach S.empty
-        reach = Reach s S.empty
+-- getReachable :: Cache -> Signature -> Term -> TypeName -> (Cache, S.Set Reach)
+-- getReachable c@(Cache m1 m2) sig p s = case M.lookup (p, reach) m1 of
+--   Just a  -> (c, a)
+--   Nothing -> (Cache (M.insert (p, reach) res m1) m2, res)
+--   where res = getReach c sig p reach S.empty
+--         reach = Reach s S.empty
+-- 
+-- getReachableR :: Cache -> Signature -> Term -> TypeName -> S.Set Term -> (Cache, S.Set Reach)
+-- getReachableR c@(Cache m1 m2) sig p s r = case M.lookup (p, reach) m1 of
+--   Just a  -> (c, a)
+--   Nothing -> (Cache (M.insert (p, reach) res m1) m2, res)
+--   where res = getReach c sig p reach S.empty
+--         reach = Reach s r
 
-getReachableR :: Cache -> Signature -> Term -> TypeName -> S.Set Term -> (Cache, S.Set Reach)
-getReachableR c@(Cache m) sig p s r = case M.lookup (p, reach) m of
-  Just a  -> (c, a)
-  Nothing -> (Cache (M.insert (p, reach) res m), res)
-  where res = getReach c sig p reach S.empty
-        reach = Reach s r
+getReachable :: Signature -> Term -> TypeName -> S.Set Reach
+getReachable sig p s = getReach sig p (Reach s S.empty) S.empty
+
+getReachableR :: Signature -> Term -> TypeName -> S.Set Term -> S.Set Reach
+getReachableR sig p s r = getReach sig p (Reach s r) S.empty
 
 isInstantiable :: Signature -> Term -> TypeName -> S.Set Term -> Bool
 isInstantiable sig p s r = not (null (getReachMin sig p (Reach s r) S.empty))
 
 -- abandon hope all ye who enter here
-getReach :: Cache -> Signature -> Term -> Reach -> S.Set Reach -> S.Set Reach
-getReach (Cache m) sig p (Reach s0 r0) reach
+getReach :: Signature -> Term -> Reach -> S.Set Reach -> S.Set Reach
+getReach sig p (Reach s0 r0) reach
   | any isVar r0 = S.empty --computeQc filters out variables, so we just need to do this for r0
   | otherwise    = computeReach s0 r0 reach
   where pSet = removePlusses p
         computeReach s r sReach
           | S.member (Reach s r) sReach = sReach
-          | otherwise                   = case M.lookup (p, Reach s r) m of
-          Just res -> S.union sReach res
-          Nothing  -> fromMaybe S.empty (foldl accuReach Nothing (ctorsOfRange sig s))
+          | otherwise                   = fromMaybe S.empty (foldl accuReach Nothing (ctorsOfRange sig s))
           where r' | hasType sig p s = S.union r pSet
                    | otherwise       = r
                 reach' = S.insert (Reach s r) sReach
