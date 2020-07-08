@@ -83,13 +83,15 @@ conjunction sig p1 p2 = p1 * p2
     u * Bottom = Bottom                                                   --E3
     (Plus u1 u2) * u = plus (u1 * u) (u2 * u)                             --S2
     u * (Plus u1 u2) = plus (u * u1) (u * u2)                             --S3
-    (AVar y s) * (AVar x Unknown) = Alias x (AVar x s)    -- HC: used in replaceVariables
-    v@(AVar x (AType s1 p1)) * (AVar y (AType s2 p2))     -- Generalization of T1/T2 for variables
-        | s1 /= s2     = Bottom
-        | p1 == p2     = v
-        | p1 == Bottom = AVar x (AType s2 p2)
-        | p2 == Bottom = v
---        | otherwise    = (AVar x (AType s1 (Plus p1 p2)))
+    v@(AVar x aType) * (AVar y (AType s2 p2)) = case aType of
+                                      -- Generalization of T1/T2 for variables
+        Unknown -> Alias x (AVar x (AType s2 p2))
+        AType s1 p1
+          | s1 /= s2     -> Bottom
+          | p1 == p2     -> v
+          | p1 == Bottom -> AVar x (AType s2 p2)
+          | p2 == Bottom -> v
+--          | otherwise    -> (AVar x (AType s1 (Plus p1 p2)))
 -- This should never happen, check isInstanciable sig (plus p1 p2) s1, if it does...
     u * (AVar _ (AType s Bottom)) = u                                     --T1
     (AVar x (AType s Bottom)) * u
@@ -107,13 +109,13 @@ conjunction sig p1 p2 = p1 * p2
     (AVar x (AType s p)) * (Appl f ts)
         | s == range sig f = complement sig (alias x (Appl f zXts)) p     --P1
         | otherwise        = Bottom
-        where zXts = zipWith conjVar ts (domain sig f)
-              conjVar t si = (AVar NoName (AType si p)) * t
+        where zXts = zipWith conjVar (domain sig f) ts
+              conjVar si t = (AVar NoName (AType si p)) * t
     (Appl f ts) * (AVar x (AType s p))
         | s == range sig f = complement sig (Appl f tXzs) p
         | otherwise        = Bottom
-        where tXzs = zipWith conjVar (domain sig f) ts
-              conjVar si t = t * (AVar NoName (AType si p))
+        where tXzs = zipWith conjVar ts (domain sig f)
+              conjVar t si = t * (AVar NoName (AType si p))
     v1 * (Compl v2 t) = complement sig (v1 * v2) t                        --P2-3
     (Compl v t) * u = complement sig (v * u) t                            --P4
 --    (Var x) * u = Alias x u
@@ -134,7 +136,7 @@ replaceVariables :: Signature -> Rule -> [AType] -> [Rule]
 replaceVariables sig (Rule (Appl f ls) rhs) d = map buildRule lterms
   where lterms = S.toList (removePlusses (Appl f subLterms))
         subLterms = zipWith conjVar ls d
-        conjVar t s = conjunction sig (AVar NoName s) t
+        conjVar t s = conjunction sig t (AVar NoName s)
         buildRule l = Rule l (typeCheck sig ((replaceVar varMap) rhs) s)
           where varMap = getVarMap l s
                 getVarMap (Alias x t) _ = M.singleton x t
