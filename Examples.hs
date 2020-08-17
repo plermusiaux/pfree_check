@@ -12,7 +12,7 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
-module Examples (flatten, flatten_fail, removePlus0_fail, skolemization, negativeNF, paper) where
+module Examples (flatten, flatten_fail, removePlus0_fail, skolemization, negativeNF, paper, non_linear) where
 
 flatten = "\
 \CONSTRUCTORS\n\
@@ -178,8 +178,8 @@ negativeNF = "\
 \nnf(not(or(p1, p2))) -> and(nnf(not(p1)), nnf(not(p2)))\n\
 \nnf(not(exists(s, p))) -> forall(s, nnf(not(p)))\n\
 \nnf(not(forall(s, p))) -> exists(s, nnf(not(p)))\n\
-\nnf(not(not(p))) -> nnf(p)\n\
 \nnf(not(impl(p1, p2))) -> and(nnf(p1), nnf(not(p2)))\n\
+\nnf(not(not(p))) -> nnf(p)\n\
 \nnf(impl(p1, p2)) -> or(nnf(not(p1)), nnf(p2))\n\
 \nnf(and(p1, p2)) -> and(nnf(p1), nnf(p2))\n\
 \nnf(or(p1, p2)) -> or(nnf(p1), nnf(p2))\n\
@@ -210,3 +210,24 @@ paper = "\
 \g(c3(y)) -> c3(f(y))\n\
 \g(c4(z)) -> c3(c2(z))"
 
+non_linear="\
+\CONSTRUCTORS\n\
+\\n\
+\c : S2 * S2 -> S1\n\
+\d : S1 * S1 -> S1\n\
+\\n\
+\a : S2\n\
+\b : S2\n\
+\\n\
+\e : S1\n\
+\\n\
+\FUNCTIONS\n\
+\\n\
+\f : S1 -> S1 [- c(a(), b()) ]\n\
+\g : S1 -> S2\n\
+\\n\
+\RULES\n\
+\\n\
+\f(c(x, y)) -> c(x, x)\n\
+\f(d(x, y)) -> c(g(x), g(x))\n\
+\f(e()) -> e()"

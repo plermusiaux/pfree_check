@@ -5,7 +5,7 @@ import Parser
 
 import Data.Maybe (fromJust)
 
-import Examples (flatten, flatten_fail, removePlus0_fail, skolemization, negativeNF, paper)
+import Examples (flatten, flatten_fail, removePlus0_fail, skolemization, negativeNF, paper, non_linear)
 import Control.Monad.IO.Class ()
 import Control.Concurrent.MVar ()
 import GHCJS.DOM (currentDocumentUnchecked)
@@ -33,7 +33,8 @@ examples =
     ("removePlus0_fail", removePlus0_fail),
     ("skolemization", skolemization),
     ("negativeNF", negativeNF),
-    ("paper", paper)
+    ("paper", paper),
+    ("non_linear", non_linear)
   ]
 
 parseResult :: Signature -> Map Rule [Term] -> String
