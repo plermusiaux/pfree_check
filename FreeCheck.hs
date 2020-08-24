@@ -149,28 +149,29 @@ replaceVariables sig (Rule (Appl f ls) rhs) d = map buildRule lterms
                 s = range sig f
 
 -- return the semantics equivalent of a term
-buildEqui :: Cache -> Signature -> Term -> (Cache, Term)
-buildEqui c sig t@(Appl f ts)
+buildEqui :: Signature -> Cache -> Term -> (Cache, Term)
+buildEqui sig c t@(Appl f ts)
   | isFunc sig f = (c2, AVar (VarName (show t)) (AType (range sig f) p))
   | otherwise    = (c1, Appl f equis)
   where (c1, equis) = foldr buildSub (c, []) ts
         buildSub t (cache, l) = (cache', t':l)
-          where (cache', t') = buildEqui cache sig t
+          where (cache', t') = buildEqui sig cache t
         (c2, p) = foldl accuCheck (c1, Bottom) (profile sig f)
         accuCheck (cache, p) (qs, q)
           | subFree   = (cache', plus p q)
           | otherwise = (cache', p)
           where (cache', subFree) = foldl subCheck (cache, True) (zip equis qs)
         subCheck (cache, False) _ = (cache, False)
-        subCheck (cache, True) (t, p) = (cache', null fails)
-          where (cache', fails) = checkPfree cache sig p t
-buildEqui c _ t = (c, t)
+        subCheck (cache, True) (_, Bottom) = (cache, True)
+        subCheck (cache, True) tp = (cache', null fails)
+          where (cache', fails) = checkPfree sig cache tp
+buildEqui _ c t = (c, t)
 
 -- check that t X p reduces to Bottom
 -- with t a qaddt term and p a sum of constructor patterns
 check :: Signature -> Term -> Term -> Bool
-check _ _ Bottom = True
-check sig t p = trace ("checking if BOTTOM: " ++ show t ++ " X " ++ show p) (checkConj (conjunction sig t p))
+check _ Bottom _ = True
+check sig p t = trace ("checking if BOTTOM: " ++ show t ++ " X " ++ show p) (checkConj (conjunction sig t p))
   where checkConj Bottom = True
         checkConj t = all (checkVariables sig) (removePlusses t)
 -- check sig t (Plus p1 p2) = (check sig t p1) && (check sig t p2)
@@ -193,20 +194,21 @@ checkTRS sig rules = snd (foldl accuCheck (emptyCache, M.empty) rules)
         accuCheck (c, m) rule
           | null fails = (c', m)
           | otherwise  = (c', M.union m fails)
-          where (c', fails) = checkRule c tSig rule
+          where (c', fails) = checkRule tSig c rule
 
 -- check rule : for each profile of the head function symbol of the left hand side,
 -- alias the variables in the right hand side and build its semantics equivalent,
 -- then check that the term obtained verify the corresponding pattern-free property.
 -- return a list of terms that do not satisfy the expected pattern-free properties
-checkRule :: Cache -> Signature -> Rule -> (Cache, M.Map Rule [Term])
-checkRule c sig r@(Rule (Appl f _) _) = foldl accuCheck (c, M.empty) rules
+checkRule :: Signature -> Cache -> Rule -> (Cache, M.Map Rule [Term])
+checkRule sig c r@(Rule (Appl f _) _) = foldl accuCheck (c, M.empty) rules
   where accuCheck (cache, m) (Rule lhs rhs, p)
           | null fails = (cache2, m)
           | otherwise  = (cache2, M.insert (Rule lhs equi) fails m)
-          where (cache1, equi) = buildEqui cache sig rhs
-                (cache2, fails) = trace ("checking RULE " ++ show (Rule lhs equi)) (checkPfree cache1 sig p equi)
+          where (cache1, equi) = buildEqui sig cache rhs
+                (cache2, fails) = trace ("checking RULE " ++ show (Rule lhs equi)) (checkPfree sig cache1 (equi,p))
         rules = concatMap buildRule (map buildDomain (profile sig f))
+        buildRule (_, Bottom) = []
         buildRule (ad, p) = zip (replaceVariables sig r ad) (repeat p)
         buildDomain (qs, p) = (zipWith AType d qs, p)
         d = domain sig f
@@ -214,38 +216,34 @@ checkRule c sig r@(Rule (Appl f _) _) = foldl accuCheck (c, M.empty) rules
 -- check that a term is p-free
 -- parameters: Signature, Pattern p (should be a sum of constructor patterns), Rhs term of a rule (should be a qaddt without Plus)
 -- return a list of terms that do not satisfy the expected pattern-free property
-checkPfree :: Cache -> Signature -> Term -> Term -> (Cache, [Term])
-checkPfree c _ Bottom _ = (c, [])
-checkPfree c@(Cache m) sig p t@(Appl f ts) = case M.lookup (t, p) m of
-  Just r -> (c, r)
-  Nothing
-    | check sig t p -> (Cache (M.insert (t, p) subFails m'), subFails)
-    | otherwise     -> (Cache (M.insert (t, p) (t:subFails) m'), t:subFails)
-    where (Cache m', subFails) = foldl accuCheck (c, []) ts
-          accuCheck (cache, l) t = (cache', l ++ l')
-            where (cache', l') = checkPfree cache sig p t
-checkPfree c@(Cache m) sig p t@(AVar _ (AType s q)) = case M.lookup (t', p) m of
-  Just r -> trace ("checking AVar " ++ show t) (c, r)
-  Nothing -> trace ("checking AVar " ++ show t) (Cache (M.insert (t', p) res m), res)
-  where reaches = getReachable sig q s
-        reachables = S.map buildComplement reaches
-        buildComplement (Reach s' p')
-          | null p'   = (AVar "_" (AType s' q))
-          | otherwise = Compl (AVar "_" (AType s' q)) (sumTerm p')
-        res = S.toList (S.filter ncheck reachables)
-        ncheck r = not (check sig r p)
-        t' = AVar NoName (AType s q)
-checkPfree c@(Cache m) sig p t@(Compl (AVar _ (AType s q)) r) = case M.lookup (t', p) m of
-  Just r -> trace ("checking Compl " ++ show t) (c, r)
-  Nothing -> trace ("checking Compl " ++ show t) (Cache (M.insert (t', p) res m), res)
-  where reaches = getReachableR sig q s (removePlusses r)
-        reachables = S.map buildComplement reaches
-        buildComplement (Reach s' p')
-          | null p'   = (AVar "_" (AType s' q))
-          | otherwise = Compl (AVar "_" (AType s' q)) (sumTerm p')
-        res = S.toList (S.filter ncheck reachables)
-        ncheck r = not (check sig r p)
-        t' = AVar NoName (AType s q)
+checkPfree :: Signature -> Cache -> (Term, Term) -> (Cache, [Term])
+checkPfree _ c (_, Bottom) = (c, [])
+checkPfree sig c (t, p) = accuCheck (c, []) t
+  where accuCheck (c'@(Cache m), l) tSub@(Appl _ ts) = case M.lookup (tSub,p) m of
+          Just res -> (c', res ++ l)
+          Nothing | check sig p tSub -> (Cache (M.insert (tSub, p) lSub mSub), lSub ++ l)
+                  | otherwise        -> (Cache (M.insert (tSub, p) (t:lSub) mSub), t:(lSub ++ l))
+                  where (Cache mSub, lSub) = foldl accuCheck (c',[]) ts
+        accuCheck (c'@(Cache m), l) (AVar _ (AType s q)) = case M.lookup (t',p) m of
+          Just res -> trace ("checking AVar " ++ show t) (c', res ++ l)
+          Nothing | all (check sig p) reachables -> (Cache (M.insert (t', p) [] m), l)
+                  | otherwise                    -> (Cache (M.insert (t', p) [t'] m), t':l)
+                  where reaches = trace ("checking AVar " ++ show t) getReachable sig q s
+                        reachables = S.map buildComplement reaches
+                        buildComplement (Reach s' p')
+                          | null p'   = (AVar "_" (AType s' q))
+                          | otherwise = Compl (AVar "_" (AType s' q)) (sumTerm p')
+          where t' = AVar NoName (AType s q)
+        accuCheck (c'@(Cache m), l) (Compl (AVar _ (AType s q)) r) = case M.lookup (t',p) m of
+          Just res -> trace ("checking Compl " ++ show t) (c', res ++ l)
+          Nothing | all (check sig p) reachables -> (Cache (M.insert (t', p) [] m), l)
+                  | otherwise                    -> (Cache (M.insert (t', p) [t'] m), t':l)
+                  where reaches = trace ("checking Compl " ++ show t) getReachableR sig q s (removePlusses r)
+                        reachables = S.map buildComplement reaches
+                        buildComplement (Reach s' p')
+                          | null p'   = (AVar "_" (AType s' q))
+                          | otherwise = Compl (AVar "_" (AType s' q)) (sumTerm p')
+          where t' = Compl (AVar NoName (AType s q)) r
 
 -------------------------------- getReachable: --------------------------------
 
