@@ -68,9 +68,13 @@ complement sig p1 p2 = p1 \\ p2
             someUnchanged = or (zipWith (==) ps pqs)
     (Compl v t) \\ u = v \\ (plus t u)                                    --P5
     v@(AVar x sp@(AType s p)) \\ t
+        | isBottom p               = sumTerm [pattern c \\ t | c <- cs]
         | isInstantiable sig p s r = Compl v t --Alias x (Compl (AVar NoName sp) t)
         | otherwise                = Bottom                               --P6
-        where r = removePlusses t
+        where cs = ctorsOfRange sig s
+              pattern c = Appl c (map buildVar (domain sig c))
+              buildVar si = AVar NoName (AType si p)
+              r = removePlusses t
     Alias x p1 \\ p2 = alias x (p1 \\ p2)
 --    p1 \\ Alias x p2 = p1 \\ p2
 
@@ -167,44 +171,50 @@ buildEqui sig c t@(Appl f ts)
           where (cache', fails) = checkPfree sig cache tp
 buildEqui _ c t = (c, t)
 
--- check that t X p reduces to Bottom
--- with t a qaddt term and p a sum of constructor patterns
-check :: Signature -> Term -> Term -> Bool
-check _ Bottom _ = True
-check sig p t = trace ("checking if BOTTOM: " ++ show t ++ " X " ++ show p) (checkConj (conjunction sig t p))
-  where checkConj Bottom = True
-        checkConj t = all (checkVariables sig) (removePlusses t)
--- check sig t (Plus p1 p2) = (check sig t p1) && (check sig t p2)
-
--- check if a term has conflicting instances of a variable
--- if at least one variable has conflicting instances, returns true
--- else false
-checkVariables :: Signature -> Term -> Bool
-checkVariables sig t = trace ("checking Variables in " ++ show t) (any isBottom (checkVar t))
-  where checkVar v@(AVar x@(VarName _) _) = M.singleton x v
-        checkVar (Alias x t) = M.singleton x t
-        checkVar t@(Compl (AVar x _) _) = M.singleton x t
-        checkVar (Appl f ts) = foldl (M.unionWith (conjunction sig)) M.empty (map checkVar ts)
+-- type and put all annotations in qaddt form
+normalizeSig :: Signature -> Signature
+normalizeSig sig@(Signature ctors funs) = Signature ctors tFuns
+  where tFuns = map normF funs
+        normF (Function f d r pr) = (Function f d r (map normPr pr))
+          where normPr (qs, p) = (map (reduce.typeP) (zip qs d), (reduce.typeP) (p, r))
+                reduce Bottom = Bottom
+                reduce v@(AVar _ _) = v
+                reduce (Plus u1 u2) = Plus (reduce u1) (reduce u2)
+                reduce (Compl u v) = complement sig (reduce u) (reduce v)
+                reduce (Appl g tl) = foldl buildTerm Bottom subterms
+                  where subterms = foldl buildSet (S.singleton []) (reverse tl)
+                        buildSet sl t = S.fold (S.union . (buildList t)) S.empty sl
+                        buildList t l = S.map (flip (:) l) ((removePlusses.reduce) t)
+                        buildTerm u l = plus u (Appl g l)
+                typeP (p,s) = p # s
+                  where
+                    Bottom # _ = Bottom
+                    (AVar x Unknown) # so      = AVar x (AType so Bottom)
+                    v@(AVar x (AType _ _)) # _ = v
+                    (Anti u)     # so = Compl (AVar NoName (AType so Bottom)) (u # so)
+                    (Compl u v)  # so = Compl (u # so) (v # so)
+                    (Plus u1 u2) # so = Plus (u1 # so) (u2 # so)
+                    (Appl g tl)  # _  = Appl g (zipWith (#) tl (domain sig g))
 
 -- check TRS : call checkRule for each rule and concatenate the results
 -- return a map of failed rule with the terms that do not satisfy the expected pattern-free property
-checkTRS :: Signature -> [Rule] -> M.Map Rule [Term]
+checkTRS :: Signature -> [Rule] -> M.Map Rule (Term,[Term])
 checkTRS sig rules = snd (foldl accuCheck (emptyCache, M.empty) rules)
-  where tSig = typePfreeSig sig
+  where nSig = normalizeSig sig
         accuCheck (c, m) rule
           | null fails = (c', m)
           | otherwise  = (c', M.union m fails)
-          where (c', fails) = checkRule tSig c rule
+          where (c', fails) = checkRule nSig c rule
 
 -- check rule : for each profile of the head function symbol of the left hand side,
 -- alias the variables in the right hand side and build its semantics equivalent,
 -- then check that the term obtained verify the corresponding pattern-free property.
 -- return a list of terms that do not satisfy the expected pattern-free properties
-checkRule :: Signature -> Cache -> Rule -> (Cache, M.Map Rule [Term])
+checkRule :: Signature -> Cache -> Rule -> (Cache, M.Map Rule (Term,[Term]))
 checkRule sig c r@(Rule (Appl f _) _) = foldl accuCheck (c, M.empty) rules
   where accuCheck (cache, m) (Rule lhs rhs, p)
           | null fails = (cache2, m)
-          | otherwise  = (cache2, M.insert (Rule lhs equi) fails m)
+          | otherwise  = (cache2, M.insert (Rule lhs equi) (p,fails) m)
           where (cache1, equi) = buildEqui sig cache rhs
                 (cache2, fails) = trace ("checking RULE " ++ show (Rule lhs equi)) (checkPfree sig cache1 (equi,p))
         rules = concatMap buildRule (map buildDomain (profile sig f))
@@ -225,7 +235,7 @@ checkPfree sig c (t, p) = accuCheck (c, []) t
                   | otherwise        -> (Cache (M.insert (tSub, p) (t:lSub) mSub), t:(lSub ++ l))
                   where (Cache mSub, lSub) = foldl accuCheck (c',[]) ts
         accuCheck (c'@(Cache m), l) (AVar _ (AType s q)) = case M.lookup (t',p) m of
-          Just res -> trace ("checking AVar " ++ show t) (c', res ++ l)
+          Just res -> trace ("checked AVar " ++ show t) (c', res ++ l)
           Nothing | all (check sig p) reachables -> (Cache (M.insert (t', p) [] m), l)
                   | otherwise                    -> (Cache (M.insert (t', p) [t'] m), t':l)
                   where reaches = trace ("checking AVar " ++ show t) getReachable sig q s
@@ -235,7 +245,7 @@ checkPfree sig c (t, p) = accuCheck (c, []) t
                           | otherwise = Compl (AVar "_" (AType s' q)) (sumTerm p')
           where t' = AVar NoName (AType s q)
         accuCheck (c'@(Cache m), l) (Compl (AVar _ (AType s q)) r) = case M.lookup (t',p) m of
-          Just res -> trace ("checking Compl " ++ show t) (c', res ++ l)
+          Just res -> trace ("checked Compl " ++ show t) (c', res ++ l)
           Nothing | all (check sig p) reachables -> (Cache (M.insert (t', p) [] m), l)
                   | otherwise                    -> (Cache (M.insert (t', p) [t'] m), t':l)
                   where reaches = trace ("checking Compl " ++ show t) getReachableR sig q s (removePlusses r)
@@ -244,6 +254,25 @@ checkPfree sig c (t, p) = accuCheck (c, []) t
                           | null p'   = (AVar "_" (AType s' q))
                           | otherwise = Compl (AVar "_" (AType s' q)) (sumTerm p')
           where t' = Compl (AVar NoName (AType s q)) r
+
+-- check that t X p reduces to Bottom
+-- with t a qaddt term and p a sum of constructor patterns
+check :: Signature -> Term -> Term -> Bool
+check _ Bottom _ = True
+check sig p t = trace ("checking if BOTTOM: " ++ show t ++ " X " ++ show p) (checkConj (conjunction sig t p))
+  where checkConj Bottom = True
+        checkConj t = all (checkVariables sig) (removePlusses t)
+-- check sig t (Plus p1 p2) = (check sig t p1) && (check sig t p2)
+
+-- check if a term has conflicting instances of a variable
+-- if at least one variable has conflicting instances, returns true
+-- else false
+checkVariables :: Signature -> Term -> Bool
+checkVariables sig t = trace ("checking Variables in " ++ show t) (any isBottom (checkVar t))
+  where checkVar v@(AVar x@(VarName _) _) = M.singleton x v
+        checkVar (Alias x t) = M.singleton x t
+        checkVar t@(Compl (AVar x _) _) = M.singleton x t
+        checkVar (Appl f ts) = foldl (M.unionWith (conjunction sig)) M.empty (map checkVar ts)
 
 -------------------------------- getReachable: --------------------------------
 
@@ -347,6 +376,25 @@ isVar :: Term -> Bool
 isVar (AVar _ _)   = True
 isVar (Plus t1 t2) = (isVar t1) || (isVar t2)
 isVar _            = False
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ----------------------------- not used anymore --------------------------------
 typeVariables :: Signature -> [Rule] -> [Rule]
