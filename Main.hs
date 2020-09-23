@@ -22,7 +22,7 @@ import GHCJS.DOM.GlobalEventHandlers (click, change)
 import GHCJS.DOM.NonElementParentNode (getElementByIdUnsafe)
 import qualified GHCJS.DOM.HTMLTextAreaElement as TextArea
        (setValue, getValue)
-import qualified GHCJS.DOM.HTMLSelectElement as Select (getValue)
+import qualified GHCJS.DOM.HTMLSelectElement as Select (setValue, getValue)
 
 import Data.Map (Map, foldlWithKey)
 import Data.List (concatMap)
@@ -69,5 +69,6 @@ main = do
   on exampleSelector change $
     do name <- Select.getValue exampleSelector
        TextArea.setValue inputArea (fromJust (lookup name examples))
+  Select.setValue exampleSelector "flatten"
   TextArea.setValue inputArea flatten
   return ()
