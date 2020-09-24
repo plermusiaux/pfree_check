@@ -167,8 +167,8 @@ negativeNF = "\
 \\n\
 \Functions\n\
 \\n\
-\nnf : Formula -> Formula [- (impl(p1,p2) + not(and(p1,p2)) + not(or(p1,p2)) + not(forall(s,p)) + not(exists(s,p)) + not(not(p))) ]\n\
-\// nnf : Formula -> Formula [- (impl(p1,p2) + not(!predicate(s))) ]\n\
+\// nnf : Formula -> Formula [- (impl(p1,p2) + not(and(p1,p2)) + not(or(p1,p2)) + not(forall(s,p)) + not(exists(s,p)) + not(not(p))) ]\n\
+\nnf : Formula -> Formula [- (impl(p1,p2) + not(!predicate(s))) ]\n\
 \\n\
 \RULES\n\
 \\n\

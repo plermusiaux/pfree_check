@@ -1,5 +1,4 @@
 import Datatypes 
-import Signature (pfree)
 import FreeCheck (checkTRS)
 import Parser
 
@@ -37,13 +36,12 @@ examples =
     ("non_linear", non_linear)
   ]
 
-parseResult :: Signature -> Map Rule [Term] -> String
+parseResult :: Signature -> Map Rule (Term,[Term]) -> String
 parseResult sig map
   | null map  = "OK"
   | otherwise = foldlWithKey accuParse "Fail" map
-  where accuParse s r ts = s ++ "\n\n" ++ show r ++ (concatMap (parseFail r) ts)
-        parseFail r t = "\n" ++ show t ++ " is not " ++ show (getP r) ++ "-free"
-        getP (Rule (Appl f _) _) = pfree sig f
+  where accuParse s r (p,ts) = s ++ "\n\n" ++ show r ++ (concatMap (parseFail r p) ts)
+        parseFail r p t = "\n" ++ show t ++ " is not " ++ show p ++ "-free"
 
 run :: String -> String
 run s =

@@ -15,16 +15,13 @@
 module Signature (
   domain,
   range,
-  aDomain,
-  aRange,
-  pfree,
+  profile,
   arity,
   ctorsOfRange,
   ctorsOfSameRange,
   hasType,
   typeCheck,
-  isFunc,
-  typePfreeSig
+  isFunc
 ) where
 
 import Datatypes (FunName, TypeName, Constructor(..), Function(..), Signature(..), Term(..), AType(..))
@@ -36,17 +33,14 @@ _funName (Constructor f _ _) = f
 _Cdomain (Constructor _ d _) = d
 _Crange (Constructor _ _ r) = r
 
-_Fdomain (Function _ d _) = d
-_Frange (Function _ _ r) = r
-
-_typeName (AType s _) = s
-_pfree (AType _ p) = p
+_Fdomain (Function _ d _ _) = d
+_Frange (Function _ _ r _) = r
 
 getFunction :: Signature -> FunName -> Function
 getFunction (Signature _ funs) f = try (find isF funs)
   where try (Just r) = r
         try Nothing = error (show f ++ " is not declared")
-        isF (Function g _ _) = f == g
+        isF (Function g _ _ _) = f == g
 
 getter :: (Constructor -> a) -> (Function -> a) -> Signature -> FunName -> a
 getter getC getF (Signature ctors funs) f = unpack (find isF eithers)
@@ -54,25 +48,20 @@ getter getC getF (Signature ctors funs) f = unpack (find isF eithers)
         unpack Nothing = error (show f ++ " is not declared")
         eithers = (map Left ctors) ++ (map Right funs)
         isF (Left (Constructor g _ _)) = f == g
-        isF (Right (Function g  _ _)) = f == g
+        isF (Right (Function g  _ _ _)) = f == g
 
 domain :: Signature -> FunName -> [TypeName]
-domain sig f = getter _Cdomain ((map _typeName)._Fdomain) sig f
+domain sig f = getter _Cdomain _Fdomain sig f
 
 range :: Signature -> FunName -> TypeName
-range sig f = getter _Crange (_typeName._Frange) sig f
+range sig f = getter _Crange _Frange sig f
 
 arity :: Signature -> FunName -> Int
 arity sig f = length (domain sig f)
 
-aDomain :: Signature -> FunName -> [AType]
-aDomain sig f = _Fdomain (getFunction sig f)
-
-aRange :: Signature -> FunName -> AType
-aRange sig f = _Frange (getFunction sig f)
-
-pfree :: Signature -> FunName -> Term
-pfree sig f = _pfree (aRange sig f)
+profile :: Signature -> FunName -> [([Term], Term)]
+profile sig f = case getFunction sig f of
+  Function _ _ _ pr -> pr
 
 ctorsOfRange :: Signature -> TypeName -> [FunName]
 ctorsOfRange (Signature ctors _) ty = map _funName (filter hasRangeTy ctors)
@@ -83,7 +72,7 @@ ctorsOfSameRange sig f = ctorsOfRange sig (range sig f)
 
 isFunc :: Signature -> FunName -> Bool
 isFunc (Signature _ funs) f = any isF funs
-  where isF (Function g _ _) = f==g
+  where isF (Function g _ _ _) = f==g
 
 hasType :: Signature -> Term -> TypeName -> Bool
 hasType sig t s = t # s
@@ -110,21 +99,4 @@ typeCheck sig t s = case (t # s) of
       | otherwise = Nothing
     (Compl u _) # so = u # so
     (Plus u1 u2) # so = maybe (u2 # so) Just (u1 # so)
-
-typePfreeSig :: Signature -> Signature
-typePfreeSig sig@(Signature ctors funs) = Signature ctors tFuns
-  where tFuns = map typePfreeFun funs
-        typePfreeFun (Function f d r) = (Function f td tr)
-          where tr = typeP r
-                td = map typeP d
-                typeP (AType s p) = AType s (p # s)
-                  where
-                    (Appl g tl) # _ = Appl g (zipWith (#) tl (domain sig g))
-                    Bottom # _ = Bottom
-                    (AVar x Unknown) # so = AVar x (AType so Bottom)
-                    (Compl u v) # so = Compl (u # so) (v # so)
-                    (Plus u1 u2) # so = Plus (u1 # so) (u2 # so)
-                    v@(AVar x (AType _ _)) # _ = v
-
-
 
