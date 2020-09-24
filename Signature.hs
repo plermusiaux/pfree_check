@@ -21,8 +21,7 @@ module Signature (
   ctorsOfSameRange,
   hasType,
   typeCheck,
-  isFunc,
-  typePfreeSig
+  isFunc
 ) where
 
 import Datatypes (FunName, TypeName, Constructor(..), Function(..), Signature(..), Term(..), AType(..))
@@ -100,18 +99,4 @@ typeCheck sig t s = case (t # s) of
       | otherwise = Nothing
     (Compl u _) # so = u # so
     (Plus u1 u2) # so = maybe (u2 # so) Just (u1 # so)
-
-typePfreeSig :: Signature -> Signature
-typePfreeSig sig@(Signature ctors funs) = Signature ctors tFuns
-  where tFuns = map typePfreeFun funs
-        typePfreeFun (Function f d r pr) = (Function f d r (map typeProfile pr))
-          where typeProfile (qs, p) = (map typeP (zip qs d), typeP (p, r))
-                typeP (p,s) = p # s
-                  where
-                    (Appl g tl) # _ = Appl g (zipWith (#) tl (domain sig g))
-                    Bottom # _ = Bottom
-                    (AVar x Unknown) # so = AVar x (AType so Bottom)
-                    (Compl u v) # so = Compl (u # so) (v # so)
-                    (Plus u1 u2) # so = Plus (u1 # so) (u2 # so)
-                    v@(AVar x (AType _ _)) # _ = v
 
