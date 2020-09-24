@@ -229,31 +229,31 @@ checkRule sig c r@(Rule (Appl f _) _) = foldl accuCheck (c, M.empty) rules
 checkPfree :: Signature -> Cache -> (Term, Term) -> (Cache, [Term])
 checkPfree _ c (_, Bottom) = (c, [])
 checkPfree sig c (t, p) = accuCheck (c, []) t
-  where accuCheck (c'@(Cache m), l) tSub@(Appl _ ts) = case M.lookup (tSub,p) m of
+  where accuCheck (c'@(Cache m), l) u@(Appl _ ts) = case M.lookup (u,p) m of
           Just res -> (c', res ++ l)
-          Nothing | check sig p tSub -> (Cache (M.insert (tSub, p) lSub mSub), lSub ++ l)
-                  | otherwise        -> (Cache (M.insert (tSub, p) (t:lSub) mSub), t:(lSub ++ l))
+          Nothing | check sig p u -> (Cache (M.insert (u, p) lSub mSub), lSub ++ l)
+                  | otherwise        -> (Cache (M.insert (u, p) (u:lSub) mSub), u:(lSub ++ l))
                   where (Cache mSub, lSub) = foldl accuCheck (c',[]) ts
-        accuCheck (c'@(Cache m), l) (AVar _ (AType s q)) = case M.lookup (t',p) m of
-          Just res -> trace ("checked AVar " ++ show t) (c', res ++ l)
-          Nothing | all (check sig p) reachables -> (Cache (M.insert (t', p) [] m), l)
-                  | otherwise                    -> (Cache (M.insert (t', p) [t'] m), t':l)
-                  where reaches = trace ("checking AVar " ++ show t) getReachable sig q s
+        accuCheck (c'@(Cache m), l) u@(AVar _ (AType s q)) = case M.lookup (u',p) m of
+          Just res -> trace ("checked AVar " ++ show u) (c', res ++ l)
+          Nothing | all (check sig p) reachables -> (Cache (M.insert (u', p) [] m), l)
+                  | otherwise                    -> (Cache (M.insert (u', p) [u'] m), u':l)
+                  where reaches = trace ("checking AVar " ++ show u) getReachable sig q s
                         reachables = S.map buildComplement reaches
                         buildComplement (Reach s' p')
                           | null p'   = (AVar "_" (AType s' q))
                           | otherwise = Compl (AVar "_" (AType s' q)) (sumTerm p')
-          where t' = AVar NoName (AType s q)
-        accuCheck (c'@(Cache m), l) (Compl (AVar _ (AType s q)) r) = case M.lookup (t',p) m of
-          Just res -> trace ("checked Compl " ++ show t) (c', res ++ l)
-          Nothing | all (check sig p) reachables -> (Cache (M.insert (t', p) [] m), l)
-                  | otherwise                    -> (Cache (M.insert (t', p) [t'] m), t':l)
-                  where reaches = trace ("checking Compl " ++ show t) getReachableR sig q s (removePlusses r)
+          where u' = AVar NoName (AType s q)
+        accuCheck (c'@(Cache m), l) u@(Compl (AVar _ (AType s q)) r) = case M.lookup (u',p) m of
+          Just res -> trace ("checked Compl " ++ show u) (c', res ++ l)
+          Nothing | all (check sig p) reachables -> (Cache (M.insert (u', p) [] m), l)
+                  | otherwise                    -> (Cache (M.insert (u', p) [u'] m), u':l)
+                  where reaches = trace ("checking Compl " ++ show u) getReachableR sig q s (removePlusses r)
                         reachables = S.map buildComplement reaches
                         buildComplement (Reach s' p')
                           | null p'   = (AVar "_" (AType s' q))
                           | otherwise = Compl (AVar "_" (AType s' q)) (sumTerm p')
-          where t' = Compl (AVar NoName (AType s q)) r
+          where u' = Compl (AVar NoName (AType s q)) r
 
 -- check that t X p reduces to Bottom
 -- with t a qaddt term and p a sum of constructor patterns
