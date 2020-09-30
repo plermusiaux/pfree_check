@@ -130,7 +130,7 @@ skolemization = "\
 \skolemization( predicate(s,t), l ) -> predicate(s,t)\n\
 \skolemization( and(p1,p2), l ) -> and( skolemization(p1,l), skolemization(p2,l) )\n\
 \skolemization( or(p1,p2), l ) -> or( skolemization(p1,l), skolemization(p2,l) )\n\
-\skolemization( exists(s,p), l ) -> skolemization(replaceVarF(p,skolem(s,l)))\n\
+\skolemization( exists(s,p), l ) -> skolemization(replaceVarF(p,skolem(s,l)), l)\n\
 \skolemization( forall(s,p), l ) -> forall(s,skolemization(p,varCons(var(s),l)))\n\
 \replaceVarF( predicate(s,t), skl ) -> predicate(s, replaceVarT(t,skl))\n\
 \replaceVarF( and(p1,p2), skl ) -> and( replaceVarF(p1,skl), replaceVarF(p2,skl) )\n\
