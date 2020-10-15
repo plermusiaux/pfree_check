@@ -137,14 +137,16 @@ conjunction sig p1 p2 = p1 * p2
 -- the corresponding variable in the rhs is then replaced by this pattern.
 -- the obtained patterns are qaddt (without Plus)
 replaceVariables :: Signature -> Rule -> [AType] -> [Rule]
-replaceVariables sig (Rule (Appl f ls) rhs) d = map buildRule lterms
-  where lterms = S.toList (removePlusses (Appl f subLterms))
+replaceVariables sig (Rule (Appl f ls) rhs) d = foldl accuRule [] lterms
+  where lterms = removePlusses (Appl f subLterms)
         subLterms = zipWith conjVar ls d
         conjVar t s = conjunction sig t (AVar NoName s)
-        buildRule l = Rule l (typeCheck sig ((replaceVar varMap) rhs) s)
-          where varMap = getVarMap l s
+        accuRule l lhs
+          | any isBottom varMap = l -- if a variable has conflicting instances (PL: do we really need to test?)
+          | otherwise           = (Rule lhs (typeCheck sig ((replaceVar varMap) rhs) s)):l
+          where varMap = getVarMap lhs s -- c(ti) * x^-bot is reduced to c(ti) so we build the annotated sorts manually for variables of ti
                 getVarMap (Alias x t) _ = M.singleton x t
-                getVarMap (Appl g ts) _ = M.unions (zipWith getVarMap ts (domain sig g))
+                getVarMap (Appl g ts) _ = M.unionsWith (conjunction sig) (zipWith getVarMap ts (domain sig g))
                 getVarMap (AVar x _) s = M.singleton x (AVar x (AType s Bottom))
                 replaceVar m (Appl f ts) = Appl f (map (replaceVar m) ts)
                 replaceVar m (AVar x Unknown)
@@ -272,7 +274,7 @@ checkVariables sig t = trace ("checking Variables in " ++ show t) (any isBottom 
   where checkVar v@(AVar x@(VarName _) _) = M.singleton x v
         checkVar (Alias x t) = M.singleton x t
         checkVar t@(Compl (AVar x _) _) = M.singleton x t
-        checkVar (Appl f ts) = foldl (M.unionWith (conjunction sig)) M.empty (map checkVar ts)
+        checkVar (Appl f ts) = M.unionsWith (conjunction sig) (map checkVar ts)
 
 -------------------------------- getReachable: --------------------------------
 
