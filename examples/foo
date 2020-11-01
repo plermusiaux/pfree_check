@@ -1,0 +1,16 @@
+
+CONSTRUCTORS
+
+true : Bool
+false : Bool
+
+bool : Bool -> Expr
+
+FUNCTIONS
+
+foo : Expr[- bool(true()) ]  -> Expr[- bool(true()) ] 
+		| Expr[- bool(false()) ]  -> Expr[- bool(true()) ] 
+
+RULES
+
+foo(bool(x)) -> bool(false())
