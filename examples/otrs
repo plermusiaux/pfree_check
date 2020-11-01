@@ -57,7 +57,7 @@ complement(sig, u, plus(v1,v2)) -> complement(sig, complement(sig,u,v1), v2)
 complement(sig, var(s), appl(f,l)) -> complement(sig, generate(sig), appl(f,l))
 complement(sig, bot(), appl(f, l)) -> bot()
 complement(sig, plus(u1,u2), appl(f,l)) -> add(complement(sig, u1, appl(f,l)), complement(sig, u2, appl(f,l)))
-complement(sig, appl(f,l1), appl(f,l2)) -> interleave(f, l1, l2, lin())
+complement(sig, appl(f,l1), appl(f,l2)) -> interleave(f, l1, l2, lin(), sig)
 complement(sig, appl(g,l1), appl(f,l2)) -> appl(f,l1)
 
 generate(sig(f,n,sig)) -> add(build(f,n,nil()), generate(sig))

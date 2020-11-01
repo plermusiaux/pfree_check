@@ -21,9 +21,12 @@ s : Nat -> Nat
 
 FUNCTIONS
 
-add : Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] * Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] -> Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ]
+add : Term [- cons(bot(),tl) ] * Term [- cons(bot(),tl) ] -> Term [- cons(bot(),tl) ]
+    | Term [- plus(bot(),v) ] * Term [- plus(bot(),v) ] -> Term [- plus(bot(),v) ]
+    | Term [- plus(u,bot()) ] * Term [- plus(u,bot()) ] -> Term [- plus(u,bot()) ]
 
-removePlus : Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] -> TermList [- ( bot() + plus(t1,t2) ) ]
+removePlus : Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] -> TermList [- bot() ]
+           | Term -> TermList [- plus(t1,t2) ]
 complement : Signature * Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] * Term -> Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ]
 
 generate : Signature -> Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ]
@@ -31,8 +34,10 @@ build : String * Nat * TermList [- bot() ] -> Term [- bot() ]
 
 interleave : String * TermList [- bot() ] * TermList * TermRList [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] * Signature -> Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ]
 
-collectPlus : Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] * TermList [- ( bot() + plus(t1,t2) ) ] -> TermList [- ( bot() + plus(t1,t2) ) ]
-split : String * TermList [- ( bot() + plus(t1,t2) ) ] * TermList [- bot() ] * TermRList [- ( bot() + plus(t1,t2) ) ]  -> TermList [- ( bot() + plus(t1,t2) ) ]
+collectPlus : Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] * TermList [- bot() ] -> TermList [- bot() ]
+            | Term * TermList [- plus(t1,t2) ] -> TermList [- plus(t1,t2) ]
+split : String * TermList [- bot() ] * TermList [- bot() ] * TermRList [- bot() ]  -> TermList [- bot() ]
+      | String * TermList [-  plus(t1,t2) ] * TermList * TermRList [- plus(t1,t2) ]  -> TermList [- plus(t1,t2) ]
 reverse : TermRList [- bot() ] * TermList [- bot() ] -> TermList [- bot() ]
         | TermRList [- plus(t1,t2) ] * TermList [- plus(t1,t2) ] -> TermList [- plus(t1,t2) ]
 concat : TermList [- bot() ] * TermList [- bot() ]  -> TermList [- bot() ]
@@ -59,7 +64,7 @@ complement(sig, u, plus(v1,v2)) -> complement(sig, complement(sig,u,v1), v2)
 complement(sig, var(s), appl(f,l)) -> complement(sig, generate(sig), appl(f,l))
 complement(sig, bot(), appl(f, l)) -> bot()
 complement(sig, plus(u1,u2), appl(f,l)) -> add(complement(sig, u1, appl(f,l)), complement(sig, u2, appl(f,l)))
-complement(sig, appl(f,l1), appl(f,l2)) -> interleave(f, l1, l2, lin())
+complement(sig, appl(f,l1), appl(f,l2)) -> interleave(f, l1, l2, lin(), sig)
 complement(sig, appl(g,l1), appl(f,l2)) -> appl(f,l1)
 
 generate(sig(f,n,sig)) -> add(build(f,n,nil()), generate(sig))
