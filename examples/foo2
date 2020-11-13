@@ -1,0 +1,23 @@
+CONSTRUCTORS
+
+c : s2 * s2 -> s1
+
+d : s3 -> s2
+
+a : s3
+b : s3
+
+FUNCTIONS
+
+foo : s1 [- c(d(a()),d(b()))] -> s2 [- d(a())]
+
+bar : s2 [- d(a())] * s2 -> s2 [- d(a())]
+    | s2 * s2 [- d(b())] -> s2 [- d(a())]
+
+RULES
+
+foo(c(x,y)) -> bar(x,y)
+//with sigma={x->d(z),y->d(z)}, c(d(z),d(z)) is c(d(a),d(b))-free but d(z) is neither d(a) neither d(b)-free
+//same for sigma={x->bar(v1,v2),y->bar(v1,v2)} where v1 and v2 are ground terms
+bar(x, d(b())) -> x
+bar(d(a()), y) -> d(b())
