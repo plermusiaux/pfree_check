@@ -45,10 +45,10 @@ removePlusses (Appl f ps) = S.map (Appl f) subterms                       --S1
   where subterms = foldl buildSet (S.singleton []) (reverse ps)
         buildSet sl t = S.fold (S.union . (buildList t)) S.empty sl
         buildList t l = S.map (flip (:) l) (removePlusses t)
-removePlusses v@(AVar _ _) = S.singleton v
 removePlusses Bottom = S.empty
-removePlusses a@(Alias x p) = S.singleton a
---removePlusses (Alias x p) = S.map (Alias x) (removePlusses p)
+removePlusses v@(AVar _ _) = S.singleton v
+removePlusses m@(Compl (AVar _ _) _) = S.singleton m
+removePlusses a@(Alias x p) = S.map (Alias x) (removePlusses p)
 
 complement :: Signature -> Term -> Term -> Term
 complement sig p1 p2 = p1 \\ p2
@@ -149,9 +149,9 @@ replaceVariables sig (Rule (Appl f ls) rhs) d = foldl accuRule [] lterms
                 getVarMap (Appl g ts) _ = M.unionsWith (conjunction sig) (zipWith getVarMap ts (domain sig g))
                 getVarMap (AVar x _) s = M.singleton x (AVar x (AType s Bottom))
                 replaceVar m (Appl f ts) = Appl f (map (replaceVar m) ts)
-                replaceVar m (AVar x Unknown)
-                  | M.member x m = m M.! x
-                  | otherwise    = error ("variable " ++ show x ++ " unknown")
+                replaceVar m (AVar x Unknown) = case M.lookup x m of
+                  Just t  -> t
+                  Nothing -> error ("variable " ++ show x ++ " unknown")
                 s = range sig f
 
 -- return the semantics equivalent of a term
