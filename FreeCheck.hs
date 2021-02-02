@@ -47,10 +47,10 @@ removePlusses (Appl f ps) = S.map (Appl f) subterms                       --S1
   where subterms = foldl buildSet (S.singleton []) (reverse ps)
         buildSet sl t = S.fold (S.union . (buildList t)) S.empty sl
         buildList t l = S.map (flip (:) l) (removePlusses t)
-removePlusses v@(AVar _ _) = S.singleton v
 removePlusses Bottom = S.empty
-removePlusses a@(Alias x p) = S.singleton a
---removePlusses (Alias x p) = S.map (Alias x) (removePlusses p)
+removePlusses v@(AVar _ _) = S.singleton v
+removePlusses m@(Compl (AVar _ _) _) = S.singleton m
+removePlusses a@(Alias x p) = S.map (Alias x) (removePlusses p)
 
 complement :: Signature -> Term -> Term -> Term
 complement sig p1 p2 = p1 \\ p2
@@ -139,19 +139,21 @@ conjunction sig p1 p2 = p1 * p2
 -- the corresponding variable in the rhs is then replaced by this pattern.
 -- the obtained patterns are qaddt (without Plus)
 replaceVariables :: Signature -> Rule -> [AType] -> [Rule]
-replaceVariables sig (Rule (Appl f ls) rhs) d = map buildRule lterms
-  where lterms = S.toList (removePlusses (Appl f subLterms))
+replaceVariables sig (Rule (Appl f ls) rhs) d = foldl accuRule [] lterms
+  where lterms = removePlusses (Appl f subLterms)
         subLterms = zipWith conjVar ls d
         conjVar t s = conjunction sig t (AVar NoName s)
-        buildRule l = Rule l (typeCheck sig ((replaceVar varMap) rhs) s)
-          where varMap = getVarMap l s
+        accuRule l lhs
+          | any isBottom varMap = l -- if a variable has conflicting instances (PL: do we really need to test?)
+          | otherwise           = (Rule lhs (typeCheck sig ((replaceVar varMap) rhs) s)):l
+          where varMap = getVarMap lhs s -- c(ti) * x^-bot is reduced to c(ti) so we build the annotated sorts manually for variables of ti
                 getVarMap (Alias x t) _ = M.singleton x t
-                getVarMap (Appl g ts) _ = M.unions (zipWith getVarMap ts (domain sig g))
+                getVarMap (Appl g ts) _ = M.unionsWith (conjunction sig) (zipWith getVarMap ts (domain sig g))
                 getVarMap (AVar x _) s = M.singleton x (AVar x (AType s Bottom))
                 replaceVar m (Appl f ts) = Appl f (map (replaceVar m) ts)
-                replaceVar m (AVar x Unknown)
-                  | M.member x m = m M.! x
-                  | otherwise    = error ("variable " ++ show x ++ " unknown")
+                replaceVar m (AVar x Unknown) = case M.lookup x m of
+                  Just t  -> t
+                  Nothing -> error ("variable " ++ show x ++ " unknown")
                 s = range sig f
 
 -- return the semantics equivalent of a term
@@ -231,31 +233,31 @@ checkRule sig c r@(Rule (Appl f _) _) = foldl accuCheck (c, M.empty) rules
 checkPfree :: Signature -> Cache -> (Term, Term) -> (Cache, [Term])
 checkPfree _ c (_, Bottom) = (c, [])
 checkPfree sig c (t, p) = accuCheck (c, []) t
-  where accuCheck (c'@(Cache m), l) tSub@(Appl _ ts) = case M.lookup (tSub,p) m of
+  where accuCheck (c'@(Cache m), l) u@(Appl _ ts) = case M.lookup (u,p) m of
           Just res -> (c', res ++ l)
-          Nothing | check sig p tSub -> (Cache (M.insert (tSub, p) lSub mSub), lSub ++ l)
-                  | otherwise        -> (Cache (M.insert (tSub, p) (t:lSub) mSub), t:(lSub ++ l))
+          Nothing | check sig p u -> (Cache (M.insert (u, p) lSub mSub), lSub ++ l)
+                  | otherwise        -> (Cache (M.insert (u, p) (u:lSub) mSub), u:(lSub ++ l))
                   where (Cache mSub, lSub) = foldl accuCheck (c',[]) ts
-        accuCheck (c'@(Cache m), l) (AVar _ (AType s q)) = case M.lookup (t',p) m of
+        accuCheck (c'@(Cache m), l) u@(AVar _ (AType s q)) = case M.lookup (u',p) m of
           Just res -> (c', res ++ l)
-          Nothing | all (check sig p) reachables -> (Cache (M.insert (t', p) [] m), l)
-                  | otherwise                    -> (Cache (M.insert (t', p) [t'] m), t':l)
+          Nothing | all (check sig p) reachables -> (Cache (M.insert (u', p) [] m), l)
+                  | otherwise                    -> (Cache (M.insert (u', p) [u'] m), u':l)
                   where reaches = getReachable sig q s
                         reachables = S.map buildComplement reaches
                         buildComplement (Reach s' p')
                           | null p'   = (AVar "_" (AType s' q))
                           | otherwise = Compl (AVar "_" (AType s' q)) (sumTerm p')
-          where t' = AVar NoName (AType s q)
-        accuCheck (c'@(Cache m), l) (Compl (AVar _ (AType s q)) r) = case M.lookup (t',p) m of
+          where u' = AVar NoName (AType s q)
+        accuCheck (c'@(Cache m), l) u@(Compl (AVar _ (AType s q)) r) = case M.lookup (u',p) m of
           Just res -> (c', res ++ l)
-          Nothing | all (check sig p) reachables -> (Cache (M.insert (t', p) [] m), l)
-                  | otherwise                    -> (Cache (M.insert (t', p) [t'] m), t':l)
+          Nothing | all (check sig p) reachables -> (Cache (M.insert (u', p) [] m), l)
+                  | otherwise                    -> (Cache (M.insert (u', p) [u'] m), u':l)
                   where reaches = getReachableR sig q s (removePlusses r)
                         reachables = S.map buildComplement reaches
                         buildComplement (Reach s' p')
                           | null p'   = (AVar "_" (AType s' q))
                           | otherwise = Compl (AVar "_" (AType s' q)) (sumTerm p')
-          where t' = Compl (AVar NoName (AType s q)) r
+          where u' = Compl (AVar NoName (AType s q)) r
 
 -- check that t X p reduces to Bottom
 -- with t a qaddt term and p a sum of constructor patterns
@@ -274,7 +276,7 @@ checkVariables sig t = any isBottom (checkVar t)
   where checkVar v@(AVar x@(VarName _) _) = M.singleton x v
         checkVar (Alias x t) = M.singleton x t
         checkVar t@(Compl (AVar x _) _) = M.singleton x t
-        checkVar (Appl f ts) = foldl (M.unionWith (conjunction sig)) M.empty (map checkVar ts)
+        checkVar (Appl f ts) = M.unionsWith (conjunction sig) (map checkVar ts)
 
 -------------------------------- getReachable: --------------------------------
 
