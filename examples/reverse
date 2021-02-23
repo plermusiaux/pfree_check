@@ -1,0 +1,21 @@
+CONSTRUCTORS
+
+A : Value
+B : Value
+
+cons : Value * List -> List
+nil : List
+
+FUNCTIONS
+
+rev : List [- cons(B(), cons(A()), l)] -> List [- cons(A(), cons(B(), l))]
+
+reverse : List [- cons(B(), cons(A(), l))] * List [- cons(B(), l)] -> List [- cons(A(), cons(B(), l))]
+        | List [- cons(A(),l)] * List [- cons(A(), cons(B(), l))] -> List [- cons(A(), cons(B(), l))]
+
+RULES
+
+reverse(nil(), l) -> l
+reverse(cons(v, l1), l2) -> reverse(l1, cons(v, l2))
+
+rev(l) -> reverse(l, nil())

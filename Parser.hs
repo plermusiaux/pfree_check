@@ -23,7 +23,7 @@ import qualified Text.Parsec.Token as P
 
 language = javaStyle
   { P.reservedNames = ["CONSTRUCTORS", "FUNCTIONS", "RULES"]
-  , P.reservedOpNames = ["=", "->", ":", "*", "!", "+", "\\", "-"]
+  , P.reservedOpNames = ["=", "->", ":", "*", "!", "+", "\\", "-", "@"]
   }
 
 lexer = P.makeTokenParser javaStyle
@@ -44,6 +44,7 @@ bang = P.reservedOp lexer "!"
 plus = P.reservedOp lexer "+"
 minus = P.reservedOp lexer "\\"
 mfree = P.reservedOp lexer "-"
+alias = P.reservedOp lexer "@"
 
 constructorsKw = P.reserved lexer "CONSTRUCTORS"
 functionsKw = P.reserved lexer "FUNCTIONS"
@@ -59,9 +60,12 @@ termSum = mkPlus <$> termCompl `sepBy1` plus
         mkPlus ts = foldr1 Plus ts
 
 termCompl :: Parser Term
-termCompl = try (mkCompl <$> term <*> (minus >> term))
+termCompl = try (Compl <$> term <*> (minus >> term))
+            <|> termAlias
+
+termAlias :: Parser Term
+termAlias = try (Alias <$> varName <*> (alias >> term))
             <|> term
-  where mkCompl t1 t2 = Compl t1 t2
 
 term :: Parser Term
 term = try (Appl <$> funName <*> parens (termSum `sepBy` comma))
@@ -71,8 +75,7 @@ term = try (Appl <$> funName <*> parens (termSum `sepBy` comma))
   where mkVar name = AVar name Unknown
 
 rule :: Parser Rule
-rule = mkRule <$> termSum <*> arrow <*> term
-  where mkRule lhs _ rhs = Rule lhs rhs
+rule = Rule <$> termSum <*> (arrow >> term)
 
 rules :: Parser [Rule]
 rules = many rule

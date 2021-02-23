@@ -1,0 +1,40 @@
+CONSTRUCTORS
+
+true : Bool
+false : Bool
+
+A : Value
+B : Value
+
+cons : Value * List -> List
+nil : List
+
+FUNCTIONS
+
+leq : Value * Value [- A()] -> Bool [- false()]
+    | Value [- B()] * Value -> Bool [- false()]
+    | Value [- A()] * Value [- B()] -> Bool [- true()]
+
+ite : Bool [- true()] * List * List [- cons(B(), cons(A(), l))] -> List [- cons(B(), cons(A(), l))] 
+    | Bool [- false()] * List [- cons(B(), cons(A(), l))] * List -> List [- cons(B(), cons(A(), l))] 
+//    | Bool * List [- cons(B(), cons(A(), l))] * List [- cons(B(), cons(A(), l))] -> List [- cons(B(), cons(A(), l))] 
+
+insert : Value [- A()] * List [- cons(B(), cons(A(), l))] -> List [- cons(B(), cons(A(), l))]
+       | Value [- B()] * List [- cons(B(), cons(A(), l))] -> List [- cons(B(), cons(A(), l))]
+
+sort : List -> List [- cons(B(), cons(A(), l))] 
+
+RULES
+
+leq(x, B()) -> true()
+leq(A(), y) -> true()
+leq(B(), A()) -> false()
+
+ite(true(), l1, l2) -> l1
+ite(false(), l1, l2) -> l2
+
+insert(x, nil()) -> cons(x, nil())
+insert(x, cons(y@(A()+B()), l)) -> ite(leq(x,y), cons(x, cons(y, l)), cons(y, insert(x, l)))
+
+sort(cons(x@(A()+B()), l)) -> insert(x, sort(l))
+sort(nil()) -> nil()

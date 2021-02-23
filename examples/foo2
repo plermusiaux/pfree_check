@@ -1,0 +1,38 @@
+CONSTRUCTORS
+
+c : s2 * s2 -> s1
+
+d : s3 -> s2
+
+a : s3
+b : s3
+
+FUNCTIONS
+
+foo : s1 [- c(d(a()),d(b()))] -> s2 [- d(a())]
+
+bar : s2 [- d(a())] * s2 -> s2 [- d(a())]
+    | s2 * s2 [- d(b())] -> s2 [- d(a())]
+
+bar2 : s2 [- d(a())] -> s2 [- d(a())]
+     | s2 [- d(b())] -> s2 [- d(a())]
+
+f : s2 -> s2
+g : s2 -> s2 [- d(a())]
+h : s2 [- d(a())] -> s2 [- d(a())]
+  | s2 [- d(b())] -> s2 [- d(a())]
+
+RULES
+
+foo(c(x,y)) -> bar(x,y)
+//with sigma={x->d(z),y->d(z)}, c(d(z),d(z)) is c(d(a),d(b))-free but d(z) is neither d(a) neither d(b)-free
+//same for sigma={x->f(v),y->f(v)} where v is a ground term
+foo(c(x,x)) -> bar2(x)
+//similarly with sigma={x->f(v)}, c(f(v),f(v)) is c(d(a),d(b))-free but f(v) is neither d(a) neither d(b)-free
+bar(x, d(b())) -> x
+bar(d(a()), y) -> d(b())
+bar2(x) -> bar(x,x)
+bar2(x) -> bar(f(x),f(x)) //this "fails" because the non-linearity between parameters of a defined symbols is not considered
+bar2(x) -> bar(h(x),h(x))
+g(x) -> bar(x,x)
+h(x) -> bar(x,x)
