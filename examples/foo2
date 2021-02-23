@@ -18,6 +18,9 @@ bar2 : s2 [- d(a())] -> s2 [- d(a())]
      | s2 [- d(b())] -> s2 [- d(a())]
 
 f : s2 -> s2
+g : s2 -> s2 [- d(a())]
+h : s2 [- d(a())] -> s2 [- d(a())]
+  | s2 [- d(b())] -> s2 [- d(a())]
 
 RULES
 
@@ -30,4 +33,6 @@ bar(x, d(b())) -> x
 bar(d(a()), y) -> d(b())
 bar2(x) -> bar(x,x)
 bar2(x) -> bar(f(x),f(x)) //this "fails" because the non-linearity between parameters of a defined symbols is not considered
-bar2(x) -> bar(bar2(x),bar2(x))
+bar2(x) -> bar(h(x),h(x))
+g(x) -> bar(x,x)
+h(x) -> bar(x,x)
