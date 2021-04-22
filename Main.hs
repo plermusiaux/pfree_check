@@ -4,7 +4,12 @@ import Parser
 
 import Data.Maybe (fromJust)
 
-import Examples (flatten, flatten_fail, removePlus0_fail, skolemization, negativeNF, paper, non_linear)
+import Examples (flatten1, flatten_fail, flatten2, negativeNF,
+                 removePlus0_fail, removePlus0, skolemization,
+                 non_linear,
+                 delete, insertionSort, mergeSort, multiply0,
+                 reverse, reverseTwice)
+
 import Control.Monad.IO.Class ()
 import Control.Concurrent.MVar ()
 import GHCJS.DOM (currentDocumentUnchecked)
@@ -27,13 +32,20 @@ import Data.Map (Map, foldlWithKey)
 import Data.List (concatMap)
 
 examples =
-  [ ("flatten", flatten),
+  [ ("flatten1", flatten1),
     ("flatten_fail", flatten_fail),
-    ("removePlus0_fail", removePlus0_fail),
-    ("skolemization", skolemization),
+    ("flatten2", flatten2),
     ("negativeNF", negativeNF),
-    ("paper", paper),
-    ("non_linear", non_linear)
+    ("removePlus0_fail", removePlus0_fail),
+    ("removePlus0", removePlus0),
+    ("skolemization", skolemization),
+    ("non_linear", non_linear),
+    ("delete", delete),
+    ("insertionSort", insertionSort),
+    ("mergeSort", mergeSort),
+    ("multiply0", multiply0),
+    ("reverse", Examples.reverse),
+    ("reverseTwice", reverseTwice)
   ]
 
 parseResult :: Signature -> Map Rule (Term,[Term]) -> String
@@ -67,6 +79,6 @@ main = do
   on exampleSelector change $
     do name <- Select.getValue exampleSelector
        TextArea.setValue inputArea (fromJust (lookup name examples))
-  Select.setValue exampleSelector "flatten"
-  TextArea.setValue inputArea flatten
+  Select.setValue exampleSelector "flatten1"
+  TextArea.setValue inputArea flatten1
   return ()
