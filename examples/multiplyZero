@@ -1,0 +1,19 @@
+CONSTRUCTORS
+
+z : Int
+s : Int -> Int
+
+FUNCTIONS
+
+plus : Int [- s(i)] * Int [- s(i)] -> Int [- s(i)]
+
+mult : Int [- s(i)] * Int -> Int [- s(i)]
+     | Int * Int [- s(i)] -> Int [- s(i)]
+
+RULES
+
+plus(z(), y) -> y
+plus(s(x), y) -> plus(x, s(y))
+
+mult(z(), y) -> z()
+mult(s(x), y) -> plus(y, mult(x, y))

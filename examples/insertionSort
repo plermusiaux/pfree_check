@@ -1,0 +1,23 @@
+CONSTRUCTORS
+
+A : Value
+B : Value
+
+cons : Value * List -> List
+nil : List
+
+FUNCTIONS
+
+insert : Value * List [- cons(B(), cons(A(), l))] -> List [- cons(B(), cons(A(), l))]
+sort : List -> List [- cons(B(), cons(A(), l))] 
+
+RULES
+
+insert(x, nil()) -> cons(x, nil())
+insert(A(), cons(A(), l)) -> cons(A(), cons(A(), l))
+insert(B(), cons(A(), l)) -> cons(A(), insert(B(), l))
+insert(A(), cons(B(), l)) -> cons(A(), cons(B(), l))
+insert(B(), cons(B(), l)) -> cons(A(), cons(B(), l))
+
+sort(cons(x, l)) -> insert(x, sort(l))
+sort(nil()) -> nil()
