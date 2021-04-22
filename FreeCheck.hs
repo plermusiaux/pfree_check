@@ -44,7 +44,7 @@ removePlusses (Plus p1 p2) = removePlusses p1 `S.union` removePlusses p2
 removePlusses (Appl f ps) = S.map (Appl f) subterms                       --S1
   where subterms = foldl buildSet (S.singleton []) (reverse ps)
         buildSet sl t = S.fold (S.union . (buildList t)) S.empty sl
-        buildList t l = S.map (flip (:) l) (removePlusses t)
+        buildList t l = S.map (:l) (removePlusses t)
 removePlusses Bottom = S.empty
 removePlusses v@(AVar _ _) = S.singleton v
 removePlusses m@(Compl (AVar _ _) _) = S.singleton m
@@ -186,7 +186,7 @@ normalizeSig sig@(Signature ctors funs) = Signature ctors tFuns
                 reduce (Appl g tl) = foldl buildTerm Bottom subterms
                   where subterms = foldl buildSet (S.singleton []) (reverse tl)
                         buildSet sl t = S.fold (S.union . (buildList t)) S.empty sl
-                        buildList t l = S.map (flip (:) l) ((removePlusses.reduce) t)
+                        buildList t l = S.map (:l) ((removePlusses.reduce) t)
                         buildTerm u l = plus u (Appl g l)
                 typeP (p,s) = p # s
                   where
