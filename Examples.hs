@@ -324,7 +324,10 @@ delete = "\
 \RULES\n\
 \\n\
 \delete(x, cons(y@(A()+B()), l)) -> ite(eq(x, y), delete(x, l), cons(y, delete(x, l)))\n\
-\delete(v, nil()) -> nil()"
+\delete(v, nil()) -> nil()\n\
+\\n\
+\ite(true(), l1, l2) -> l1\n\
+\ite(false(), l1, l2) -> l2"
 
 insertionSort = "\
 \CONSTRUCTORS\n\
