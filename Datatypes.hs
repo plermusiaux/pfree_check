@@ -103,8 +103,9 @@ instance Show Term where
   show (Alias x p) = show x ++ "@" ++ show p
   show (Anti p) = "!" ++ show p
   show Bottom = "⊥"
-  show (AVar x Unknown) = show x
-  show (AVar x s) = show x ++ " : " ++ show s
+  show (AVar x s) = case s of
+    Unknown -> show x
+    _       -> show x ++ " : " ++ show s
 
 
 instance Show Rule where
