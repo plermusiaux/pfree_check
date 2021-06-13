@@ -148,6 +148,7 @@ replaceVariables sig (Rule (Appl f ls) rhs) d = foldl accuRule [] lterms
                 getVarMap (Alias x t) _ = M.singleton x t
                 getVarMap (Appl g ts) _ = M.unionsWith (conjunction sig) (zipWith getVarMap ts (domain sig g))
                 getVarMap (AVar x _) s = M.singleton x (AVar x (AType s Bottom))
+                getVarMap (Compl (AVar x _) r) s = M.singleton x (Compl (AVar x (AType s Bottom)) r)
                 replaceVar m (Appl f ts) = Appl f (map (replaceVar m) ts)
                 replaceVar m (AVar x Unknown) = case M.lookup x m of
                   Just t  -> t
