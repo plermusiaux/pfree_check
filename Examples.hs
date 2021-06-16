@@ -459,7 +459,7 @@ reverse = "\
 \\n\
 \FUNCTIONS\n\
 \\n\
-\rev : List [- cons(B(), cons(A()), l)] -> List [- cons(A(), cons(B(), l))]\n\
+\rev : List [- cons(B(), cons(A(), l))] -> List [- cons(A(), cons(B(), l))]\n\
 \\n\
 \reverse : List [- cons(B(), cons(A(), l))] * List [- cons(B(), l)] -> List [- cons(A(), cons(B(), l))]\n\
 \        | List [- cons(A(),l)] * List [- cons(A(), cons(B(), l))] -> List [- cons(A(), cons(B(), l))]\n\
@@ -482,7 +482,7 @@ reverseTwice = "\
 \\n\
 \FUNCTIONS\n\
 \\n\
-\revRev : List [- cons(B(), cons(A()), l)] -> List [- cons(B(), cons(A(), l))]\n\
+\revRev : List [- cons(B(), cons(A(), l))] -> List [- cons(B(), cons(A(), l))]\n\
 \\n\
 \reverse : List [- cons(B(), cons(A(), l))] * List [- cons(B(), l)] -> List [- cons(A(), cons(B(), l))]\n\
 \        | List [- cons(A(),l)] * List [- cons(A(), cons(B(), l))] -> List [- cons(A(), cons(B(), l))]\n\
