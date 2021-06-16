@@ -8,7 +8,7 @@ nil : List
 
 FUNCTIONS
 
-rev : List [- cons(B(), cons(A()), l)] -> List [- cons(A(), cons(B(), l))]
+rev : List [- cons(B(), cons(A(), l))] -> List [- cons(A(), cons(B(), l))]
 
 reverse : List [- cons(B(), cons(A(), l))] * List [- cons(B(), l)] -> List [- cons(A(), cons(B(), l))]
         | List [- cons(A(),l)] * List [- cons(A(), cons(B(), l))] -> List [- cons(A(), cons(B(), l))]
