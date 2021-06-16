@@ -85,7 +85,8 @@ split(f, nil(), cons(u,tl), rl) -> split(f, removePlus(u), tl, rl)
 split(f, nil(), nil(), rl) -> nil()
 
 collectPlus(plus(u1, u2), l) -> concat(collectPlus(u1, nil()), collectPlus(u2, l))
-collectPlus(appl(f, tl), l) -> concat(split(f, nil(), tl, lin()),l)
+collectPlus(appl(f, nil()), l) -> cons(appl(f,nil()), nil())
+collectPlus(appl(f, tl\nil()), l) -> concat(split(f, nil(), tl, lin()),l)
 collectPlus(var(s), l) -> cons(var(s),l)
 collectPlus(bot(), l) -> l
 

@@ -38,6 +38,7 @@ replaceVarF( or(p1,p2), skl ) -> or( replaceVarF(p1,skl), replaceVarF(p2,skl) )
 replaceVarF( exists(s,p), skl ) -> exists(s, replaceVarF(p,skl))
 replaceVarF( forall(s,p), skl ) -> forall(s, replaceVarF(p,skl))
 replaceVarT( tVar(var(s)), skolem(s,l)) -> skolem(s,l)
+replaceVarT( tVar(var(s1)), skolem(s2,l)) -> tVar(var(s1))
 replaceVarT( apply(t1,t2), skl ) -> apply( replaceVarT(t1, skl), replaceVarT(t2,skl) )
 replaceVarT( concat (t1,t2), skl ) -> concat( replaceVarT(t1, skl), replaceVarT(t2,skl) )
 replaceVarT( t, skl ) -> t
