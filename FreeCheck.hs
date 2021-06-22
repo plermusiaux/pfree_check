@@ -3,7 +3,7 @@
 module FreeCheck (checkTRS) where
 
 import Debug.Trace
-import Data.List ( tails, inits )
+import Data.List ( partition, (\\) )
 import Data.Maybe
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -19,8 +19,7 @@ isBottom t = False
 -- interleave abc ABC = Abc, aBc, abC
 interleave :: [a] -> [a] -> [[a]]
 interleave [] [] = []
-interleave xs ys = zipWith3 glue (inits xs) ys (tails (tail xs))
-  where glue xs x ys = xs ++ x : ys
+interleave (xi:xs) (yi:ys) = (yi:xs) : (map (xi:) (interleave xs ys))
 
 alias :: VarName -> Term -> Term
 alias NoName t = t
@@ -43,15 +42,15 @@ removePlusses :: Term -> S.Set Term
 removePlusses (Plus p1 p2) = removePlusses p1 `S.union` removePlusses p2
 removePlusses (Appl f ps) = S.map (Appl f) subterms                       --S1
   where subterms = foldl buildSet (S.singleton []) (reverse ps)
-        buildSet sl t = S.fold (S.union . (buildList t)) S.empty sl
+        buildSet sl t = foldr (S.union . (buildList t)) S.empty sl
         buildList t l = S.map (:l) (removePlusses t)
 removePlusses Bottom = S.empty
 removePlusses v@(AVar _ _) = S.singleton v
-removePlusses m@(Compl (AVar _ _) _) = S.singleton m
+removePlusses m@(Compl _ _) = S.singleton m
 removePlusses a@(Alias x p) = S.map (Alias x) (removePlusses p)
 
-complement :: Signature -> Term -> Term -> Term
-complement sig p1 p2 = p1 \\ p2
+complementR :: Signature -> Term -> Term -> Term
+complementR sig p1 p2 = p1 \\ p2
   where
     u \\ (AVar _ _) = Bottom                                              --M1
     u \\ Bottom = u                                                       --M2
@@ -69,13 +68,49 @@ complement sig p1 p2 = p1 \\ p2
     (Compl v t) \\ u = v \\ (plus t u)                                    --P6
     v@(AVar x sp@(AType s p)) \\ t
         | isBottom p               = sumTerm [pattern c \\ t | c <- cs]
-        | isInstantiable sig s p r = Compl v t --Alias x (Compl (AVar NoName sp) t)
+        | isInstantiable sig s p r = alias x (Compl (AVar NoName sp) t)
         | otherwise                = Bottom                               --P7
         where cs = ctorsOfRange sig s
               pattern c = Appl c (map buildVar (domain sig c))
               buildVar si = AVar NoName (AType si p)
               r = removePlusses t
     Alias x p1 \\ p2 = alias x (p1 \\ p2)
+--    p1 \\ Alias x p2 = p1 \\ p2
+
+complementA :: Signature -> Term -> Term -> Term
+complementA sig p1 p2 = p1 \\ p2
+  where
+    u \\ (AVar _ (AType _ Bottom)) = Bottom                               --M1
+    u \\ Bottom = u                                                       --M2
+    Plus q1 q2 \\ p = plus (q1 \\ p) (q2 \\ p)                            --M3
+--    (Var x) \\ p@(Appl g ps) = alias x (sum [pattern f \\ p | f <- fs])
+--      where fs = ctorsOfSameRange sig g
+--            pattern f = Appl f (replicate (arity sig f) (Var "_"))
+    Bottom \\ u = Bottom                                                  --M5
+    p@(Appl _ _) \\ (Plus p1 p2) = (p \\ p1) \\ p2                        --M6
+    Appl f ps \\ Appl g qs
+        | f /= g || someUnchanged = appl f ps                             --M8
+        | otherwise = sumTerm [appl f ps' | ps' <- interleave ps pqs]     --M7
+      where pqs = zipWith (\\) ps qs
+            someUnchanged = or (zipWith (==) ps pqs)
+    u@(Appl f ts) \\ (AVar _ (AType _ q)) = plus match subMatch           --C1
+      where match = conjunction sig u q
+            subMatch = sumTerm [appl f ps | ps <- interleave ts tqs]
+            tqs = zipWith (\\) ts (map buildVar (domain sig f))
+            buildVar s = AVar NoName (AType s q)
+    (Compl v t) \\ u = v \\ (plus t u)                                    --C2
+    v@(AVar x sp) \\ t
+        | getInstance sig v ql = Compl v t --Alias x (Compl (AVar NoName sp) t)
+        | otherwise             = Bottom                                  --C3
+        where ql = collect t
+              collect (Plus t1 t2) = (collect t1) ++ (collect t2)
+              collect (AVar _ (AType _ q)) = [q]
+    a@(Alias x p) \\ t
+        | getInstance sig p ql = Compl (Alias x p) t
+        | otherwise             = Bottom                                  --C3'
+        where ql = collect t
+              collect (Plus t1 t2) = (collect t1) ++ (collect t2)
+              collect (AVar _ (AType _ q)) = [q]
 --    p1 \\ Alias x p2 = p1 \\ p2
 
 -------------------------------------------------------------------------------
@@ -87,9 +122,8 @@ conjunction sig p1 p2 = p1 * p2
     u * Bottom = Bottom                                                   --E3
     (Plus u1 u2) * u = plus (u1 * u) (u2 * u)                             --S2
     u * (Plus u1 u2) = plus (u * u1) (u * u2)                             --S3
-    v@(AVar x aType) * (AVar y (AType s2 p2)) = case aType of
-                                      -- Generalization of T1/T2 for variables
-        Unknown -> Alias x (AVar x (AType s2 p2))
+    v@(AVar x aType) * (AVar y (AType s2 p2)) = case aType of             --Generalization of T1/T2 for variables
+        Unknown -> Alias x (AVar NoName (AType s2 p2)) -- for variable inference only
         AType s1 p1
           | s1 /= s2     -> Bottom
           | p1 == p2     -> v
@@ -111,23 +145,24 @@ conjunction sig p1 p2 = p1 * p2
 --              pattern a = Appl a (map buildVar (domain sig a))
 --              buildVar si = AVar "_" (AType si p)
     (AVar x (AType s p)) * (Appl f ts)
-        | s == range sig f = complement sig (alias x (Appl f zXts)) p     --P1
+        | s == range sig f = complementR sig (alias x (Appl f zXts)) p    --P1
         | otherwise        = Bottom
         where zXts = zipWith conjVar (domain sig f) ts
               conjVar si t = (AVar NoName (AType si p)) * t
     (Appl f ts) * (AVar x (AType s p))
-        | s == range sig f = complement sig (Appl f tXzs) p               --P2
+        | s == range sig f = complementR sig (Appl f tXzs) p              --P2
         | otherwise        = Bottom
         where tXzs = zipWith conjVar ts (domain sig f)
               conjVar t si = t * (AVar NoName (AType si p))
-    v1 * (Compl v2 t) = complement sig (v1 * v2) t                        --P3-4
-    (Compl v t) * u = complement sig (v * u) t                            --P5
+    v1 * (Compl v2 t) = complementR sig (v1 * v2) t                       --P3-4
+    (Compl v t) * u = complementR sig (v * u) t                           --P5
 --    (Var x) * u = Alias x u
 --    (Appl f ts) * (AVar _ (AType _ p)) = complement sig (Appl f tsXz) p
 --        where tsXz = zipWith conjVar ts (domain sig f)
 --              conjVar t s = t * (AVar (VarName (show t)) (AType s p))
 --
     (Alias x t) * u = alias x (t * u)
+    t * (Alias x u) = alias x (t * u)
 
 -- compare each subterm of the lhs to its expected form,
 -- as defined by the annotated type of the function, such that
@@ -145,7 +180,7 @@ replaceVariables sig (Rule (Appl f ls) rhs) d = foldl accuRule [] lterms
           | any isBottom varMap = l -- if a variable has conflicting instances (PL: do we really need to test?)
           | otherwise           = (Rule lhs (typeCheck sig ((replaceVar varMap) rhs) s)):l
           where varMap = getVarMap lhs s -- c(ti) * x^-bot is reduced to c(ti) so we build the annotated sorts manually for variables of ti
-                getVarMap (Alias x t) _ = M.singleton x t
+                getVarMap t@(Alias x _) _ = M.singleton x t
                 getVarMap (Appl g ts) _ = M.unionsWith (conjunction sig) (zipWith getVarMap ts (domain sig g))
                 getVarMap (AVar x _) s = M.singleton x (AVar x (AType s Bottom))
                 getVarMap (Compl (AVar x _) r) s = M.singleton x (Compl (AVar x (AType s Bottom)) r)
@@ -183,7 +218,7 @@ normalizeSig sig@(Signature ctors funs) = Signature ctors tFuns
                 reduce Bottom = Bottom
                 reduce v@(AVar _ _) = v
                 reduce (Plus u1 u2) = Plus (reduce u1) (reduce u2)
-                reduce (Compl u v) = complement sig (reduce u) (reduce v)
+                reduce (Compl u v) = complementR sig (reduce u) (reduce v)
                 reduce (Appl g tl) = foldl buildTerm Bottom subterms
                   where subterms = foldl buildSet (S.singleton []) (reverse tl)
                         buildSet sl t = S.fold (S.union . (buildList t)) S.empty sl
@@ -216,10 +251,12 @@ checkTRS sig rules = snd (foldl accuCheck (emptyCache, M.empty) rules)
 checkRule :: Signature -> Cache -> Rule -> (Cache, M.Map Rule (Term,[Term]))
 checkRule sig c r@(Rule (Appl f _) _) = foldl accuCheck (c, M.empty) rules
   where accuCheck (cache, m) (Rule lhs rhs, p)
-          | null fails = (cache2, m)
-          | otherwise  = (cache2, M.insert (Rule lhs equi) (p,fails) m)
-          where (cache1, equi) = buildEqui sig cache rhs
-                (cache2, fails) = trace ("checking RULE " ++ show (Rule lhs equi)) (checkPfree sig cache1 (equi,p))
+          | checkPfree2 sig (rhs, p) = (cache, m)
+          | otherwise                = (cache, M.insert (Rule lhs rhs) (p, [rhs]) m)
+--           | null fails = (cache2, m)
+--           | otherwise  = (cache2, M.insert (Rule lhs equi) (p,fails) m)
+--           where (cache1, equi) = buildEqui sig cache rhs
+--                 (cache2, fails) = trace ("checking RULE " ++ show (Rule lhs equi)) (checkPfree sig cache1 (equi,p))
         rules = concatMap buildRule (map buildDomain (profile sig f))
         buildRule (_, Bottom) = []
         buildRule (ad, p) = zip (replaceVariables sig r ad) (repeat p)
@@ -270,6 +307,85 @@ checkVariables sig t = trace ("checking Variables in " ++ show t) (any isBottom 
         checkVar t@(Compl (AVar x@(VarName _) _) _) = M.singleton x t
         checkVar (Compl (AVar NoName _) _) = M.empty
         checkVar (Appl f ts) = M.unionsWith (conjunction sig) (map checkVar ts)
+
+
+-- check that a term is p-free
+-- parameters: Signature, Pattern p (should be a sum of constructor patterns), Rhs term of a rule (should be a qsymb)
+-- return a list of terms that do not satisfy the expected pattern-free property
+checkPfree2 :: Signature -> (Term, Term) -> Bool
+checkPfree2 _ (_, Bottom) = True
+checkPfree2 sig (t0, p0) = trace ("checking " ++ show p0 ++ "-free: " ++ show t0) recCheck t0 [p0] M.empty []
+  where convert fSet x@(AVar _ _)  = (fSet, x)
+        convert fSet a@(Alias _ _) = (fSet, a)
+        convert fSet u@(Compl _ _) = (fSet, u)
+        convert fSet u@(Appl f us)
+          | isFunc sig f = (S.insert u fSet, v)
+          | otherwise    = (fSet', Appl f vs)
+          where (fSet', vs) = foldr accuConvert (fSet, []) us
+                v = AVar (VarName (show u)) (AType (range sig f) Bottom)
+        accuConvert ti (mi, tl) = (mi', ti':tl)
+          where (mi', ti') = convert mi ti
+        recCheck t@(AVar x (AType s _)) pl vMap fList
+          | getInstance sig t' pl' = checkNextF (M.insert x (t', pl') vMap) fList
+          | otherwise              = True
+          where (t', pl') = case M.lookup x vMap of
+                  Just (u, ql) -> (u, pl++ql)
+                  Nothing      -> (t, pl)
+        recCheck (Alias x t) pl vMap fList
+          | getInstance sig tXu pl' = checkNextF (M.insert x (tXu, pl') vMap) fList
+          | otherwise               = True
+          where (tXu, pl') = case M.lookup x vMap of
+                  Just (u, ql) -> (conjunction sig t u, pl++ql)
+                  Nothing      -> (t, pl)
+        recCheck t@(Appl f ts) pl vMap fList = all (checkVarMap . (getVarMap vMap)) tmSet
+          where (fSet, ts') = foldr accuConvert (S.fromList fList, []) ts
+                tmSet = removePlusses (complementA sig (Appl f ts') (sumTerm cl))
+                  where cl | isFunc sig f = map ((Appl f) . (zipWith buildVar d)) profiles
+                           | otherwise    = zipWith (flip buildVar) pl (repeat s)
+                           where s = range sig f
+                                 d = domain sig f
+                                 buildVar si qi = AVar NoName (AType si qi)
+                                 profiles = selectProfiles sig f u pl'
+                                 (u, pl') = case M.lookup (VarName (show t)) vMap of
+                                   Just (v, ql) -> (v, pl++ql)
+                                   Nothing -> (AVar NoName (AType s Bottom), pl)
+                checkVarMap vMap
+                  | any isLBottom vMap = True
+                  | otherwise          = checkNextF vMap (S.toList fSet)
+                  where isLBottom (Bottom, _) = True
+                        isLBottom (_, _) = False
+        getVarMap vMap t = case t of
+          AVar NoName _                  -> vMap
+          Compl (AVar NoName _) _        -> vMap
+          AVar x@(VarName _) _           -> M.insertWith glue x (t, []) vMap
+          Compl (AVar x@(VarName _) _) _ -> M.insertWith glue x (t, []) vMap
+          Alias x u                      -> M.insertWith glue x (u, []) vMap
+          Compl (Alias x u) q            -> M.insertWith glue x (u, strip q) vMap
+          Appl f ts                      -> foldl getVarMap vMap ts
+          where strip (Plus q1 q2) = (strip q1) ++ (strip q2)
+                strip (AVar _ (AType _ q)) = [q]
+                glue (Bottom, _) (_, _) = (Bottom, [])
+                glue (_, _) (Bottom, _) = (Bottom, [])
+                glue (t1, q1) (t2, q2)
+                 | getInstance sig txt ql = (txt, ql)
+                 | otherwise              = (Bottom, [])
+                 where txt = conjunction sig t1 t2
+                       ql = q1 ++ q2
+        checkNextF _ [] = False
+        checkNextF vMap (tf:fList) = recCheck tf [] vMap fList
+
+selectProfiles :: Signature -> FunName -> Term -> [Term] -> [[Term]]
+selectProfiles sig f t ql = map fst (getCombinations (profile sig f))
+  where getCombinations [] = []
+        getCombinations profList = okl ++ (getCombinations (distribute kol))
+          where (okl, kol) = partition checkProfile profList
+        checkProfile (_, r) = all checkRange (removePlusses (conjunction sig t (AVar NoName (AType s r))))
+        checkRange u = not (getInstance sig u ql)
+        distribute [] = []
+        distribute ((d, r):tail) = (map sumProfile tail) ++ (distribute tail)
+          where sumProfile (d', r') = (zipWith plus d d', plus r r')
+        s = range sig f
+
 
 -------------------------------- getReachable: --------------------------------
 
@@ -379,8 +495,43 @@ isVar _            = False
 
 
 
+-- check if there exists an instance of a linear pattern that is not
+-- p-free for all p in q0
+getInstance :: Signature -> Term -> [Term] -> Bool
+getInstance _ Bottom _ = False
+getInstance sig t0 q0
+  | any isBottom q0 = False
+  | otherwise       = computeInstance M.empty t0 q0
+  where computeInstance mReach t q = case M.lookup t mReach of
+          Just qReach | q == qReach -> False
+                      | otherwise   -> checkInstance t
+          Nothing                   -> checkInstance t
+          where checkInstance t = any conjInstance powerQ
+                  where powerQ = foldl powerConj [([], t)] q
+                        subReach = M.insert t q mReach
+                        conjInstance (qSet, qConj) = any subInstance (removePlusses qConj)
+                          where subInstance (Appl _ ts) = any (all (uncurry (computeInstance subReach))) (computeQt ts (q \\ qSet))
+                                subInstance (AVar _ s) = any subInstance (computePatterns s S.empty)
+                                subInstance (Compl (AVar _ s) r) = any subInstance (computePatterns s (removePlusses r))
+                                subInstance (Alias _ u) = subInstance u
+        powerConj l q = concatMap accuConj l
+          where accuConj (ql, t)
+                  | isBottom txq = [(ql, t)]
+                  | otherwise    = (q:ql, txq):[(ql, t)]
+                  where txq = conjunction sig t q
+        computePatterns (AType s p) rSet = concatMap buildPatterns (ctorsOfRange sig s)
+          where prSet = S.union rSet (removePlusses p)
+                buildPatterns f =  map buildCompl (computeQc sig f prSet)
+                  where buildCompl qs = Appl f (zipWith Compl xs (map sumTerm qs))
+                        xs = map buildVar (domain sig f)
+                        buildVar si = AVar NoName (AType si p)
 
 
+computeQt :: [Term] -> [Term] -> [[(Term, [Term])]]
+computeQt ts qs = foldl getDist [map (\t -> (t,[])) ts] qs
+  where getDist tQ q = concatMap distribute tQ
+          where distribute [] = []
+                distribute ((t,xl):ql) = ((t, q:xl):ql):(map ((t,xl):) (distribute ql))
 
 
 
