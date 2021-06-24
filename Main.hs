@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 import Datatypes
 import FreeCheck
 import Generator
@@ -8,6 +10,7 @@ import System.Directory (getDirectoryContents, doesFileExist)
 import System.Exit (exitFailure)
 import System.Random
 import Data.Either (partitionEithers)
+import Data.Set (empty)
 import System.IO (hPutStrLn, stderr)
 import Control.DeepSeq (deepseq)
 import Control.Monad (filterM)
@@ -59,7 +62,7 @@ makeBenchmarks namedModules rModules (sig,rReaches) rPfree = (map makeMBench nam
                                                              (map makePFBench rPfree)
   where makeMBench (name, Module sigM trs) = bench name $ nf (checkTRS sigM) trs
         makeRMBench (i, Module sigM trs) = bench ("check random seed " ++ show i) $ nf (checkTRS sigM) trs
-        makeRRBench (i, p) = bench ("getReachable random seed " ++ show i) $ nf (getReachable sig p) (TypeName "s1")
+        makeRRBench (i, p) = bench ("getReachable random seed " ++ show i) $ nf (getReachable sig (AType "s1" p)) empty
         makePFBench (i, Module sigM trs) = bench ("pFree random seed " ++ show i) $ nf (checkTRS sigM) trs
 
 main = do

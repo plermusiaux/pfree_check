@@ -68,11 +68,11 @@ complement sig p1 p2 = p1 \\ p2
         | otherwise = sumTerm [appl f ps' | ps' <- interleave ps pqs]     --M7
       where pqs = zipWith (\\) ps qs
             someUnchanged = or (zipWith (==) ps pqs)
-    (Compl v t) \\ u = v \\ (plus t u)                                    --P5
+    (Compl v t) \\ u = v \\ (plus t u)                                    --P6
     v@(AVar x sp@(AType s p)) \\ t
         | isBottom p               = sumTerm [pattern c \\ t | c <- cs]
-        | isInstantiable sig p s r = Compl v t --Alias x (Compl (AVar NoName sp) t)
-        | otherwise                = Bottom                               --P6
+        | isInstantiable sig s p r = Compl v t --Alias x (Compl (AVar NoName sp) t)
+        | otherwise                = Bottom                               --P7
         where cs = ctorsOfRange sig s
               pattern c = Appl c (map buildVar (domain sig c))
               buildVar si = AVar NoName (AType si p)
@@ -98,7 +98,7 @@ conjunction sig p1 p2 = p1 * p2
           | p1 == Bottom -> AVar x (AType s2 p2)
           | p2 == Bottom -> v
 --          | otherwise    -> (AVar x (AType s1 (Plus p1 p2)))
--- This should never happen, check isInstanciable sig (plus p1 p2) s1, if it does...
+-- This should never happen, check isInstantiable sig s1 (plus p1 p2) S.empty, if it does...
     u * (AVar _ (AType s Bottom)) = u                                     --T1
     (AVar x (AType s Bottom)) * u
         | hasType sig u s = alias x u                                     --T2
@@ -118,12 +118,12 @@ conjunction sig p1 p2 = p1 * p2
         where zXts = zipWith conjVar (domain sig f) ts
               conjVar si t = (AVar NoName (AType si p)) * t
     (Appl f ts) * (AVar x (AType s p))
-        | s == range sig f = complement sig (Appl f tXzs) p
+        | s == range sig f = complement sig (Appl f tXzs) p               --P2
         | otherwise        = Bottom
         where tXzs = zipWith conjVar ts (domain sig f)
               conjVar t si = t * (AVar NoName (AType si p))
-    v1 * (Compl v2 t) = complement sig (v1 * v2) t                        --P2-3
-    (Compl v t) * u = complement sig (v * u) t                            --P4
+    v1 * (Compl v2 t) = complement sig (v1 * v2) t                        --P3-4
+    (Compl v t) * u = complement sig (v * u) t                            --P5
 --    (Var x) * u = Alias x u
 --    (Appl f ts) * (AVar _ (AType _ p)) = complement sig (Appl f tsXz) p
 --        where tsXz = zipWith conjVar ts (domain sig f)
@@ -137,7 +137,7 @@ conjunction sig p1 p2 = p1 * p2
 -- with x an annotated variable and r a sum of contructor pattern,
 -- expressing its expected shape as induced by the annotated type.
 -- the corresponding variable in the rhs is then replaced by this pattern.
--- the obtained patterns are qaddt (without Plus)
+-- the obtained patterns are qsymb
 replaceVariables :: Signature -> Rule -> [AType] -> [Rule]
 replaceVariables sig (Rule (Appl f ls) rhs) d = foldl accuRule [] lterms
   where lterms = removePlusses (Appl f subLterms)
@@ -213,7 +213,7 @@ checkTRS sig rules = snd (foldl accuCheck (emptyCache, M.empty) rules)
 
 -- check rule : for each profile of the head function symbol of the left hand side,
 -- alias the variables in the right hand side and build its semantics equivalent,
--- then check that the term obtained verify the corresponding pattern-free property.
+-- then check that the term obtained verifies the corresponding pattern-free property.
 -- return a list of terms that do not satisfy the expected pattern-free properties
 checkRule :: Signature -> Cache -> Rule -> (Cache, M.Map Rule (Term,[Term]))
 checkRule sig c r@(Rule (Appl f _) _) = foldl accuCheck (c, M.empty) rules
@@ -229,7 +229,7 @@ checkRule sig c r@(Rule (Appl f _) _) = foldl accuCheck (c, M.empty) rules
         d = domain sig f
 
 -- check that a term is p-free
--- parameters: Signature, Pattern p (should be a sum of constructor patterns), Rhs term of a rule (should be a qaddt without Plus)
+-- parameters: Signature, Pattern p (should be a sum of constructor patterns), Rhs term of a rule (should be a qsymb)
 -- return a list of terms that do not satisfy the expected pattern-free property
 checkPfree :: Signature -> Cache -> (Term, Term) -> (Cache, [Term])
 checkPfree _ c (_, Bottom) = (c, [])
@@ -239,26 +239,18 @@ checkPfree sig c (t, p) = accuCheck (c, []) t
           Nothing | check sig p u -> (Cache (M.insert (u, p) lSub mSub), lSub ++ l)
                   | otherwise        -> (Cache (M.insert (u, p) (u:lSub) mSub), u:(lSub ++ l))
                   where (Cache mSub, lSub) = foldl accuCheck (c',[]) ts
-        accuCheck (c'@(Cache m), l) u@(AVar _ (AType s q)) = case M.lookup (u',p) m of
+        accuCheck (c'@(Cache m), l) u@(AVar _ s) = case M.lookup (u',p) m of
           Just res -> (c', res ++ l)
           Nothing | all (check sig p) reachables -> (Cache (M.insert (u', p) [] m), l)
                   | otherwise                    -> (Cache (M.insert (u', p) [u'] m), u':l)
-                  where reaches = getReachable sig q s
-                        reachables = S.map buildComplement reaches
-                        buildComplement (Reach s' p')
-                          | null p'   = (AVar "_" (AType s' q))
-                          | otherwise = Compl (AVar "_" (AType s' q)) (sumTerm p')
-          where u' = AVar NoName (AType s q)
-        accuCheck (c'@(Cache m), l) u@(Compl (AVar _ (AType s q)) r) = case M.lookup (u',p) m of
+                  where reachables = getReachable sig s S.empty
+          where u' = AVar NoName s
+        accuCheck (c'@(Cache m), l) u@(Compl (AVar _ s) r) = case M.lookup (u',p) m of
           Just res -> (c', res ++ l)
           Nothing | all (check sig p) reachables -> (Cache (M.insert (u', p) [] m), l)
                   | otherwise                    -> (Cache (M.insert (u', p) [u'] m), u':l)
-                  where reaches = getReachableR sig q s (removePlusses r)
-                        reachables = S.map buildComplement reaches
-                        buildComplement (Reach s' p')
-                          | null p'   = (AVar "_" (AType s' q))
-                          | otherwise = Compl (AVar "_" (AType s' q)) (sumTerm p')
-          where u' = Compl (AVar NoName (AType s q)) r
+                  where reachables = getReachable sig s (removePlusses r)
+          where u' = Compl (AVar NoName s) r
 
 -- check that t X p reduces to Bottom
 -- with t a qaddt term and p a sum of constructor patterns
@@ -275,8 +267,10 @@ check sig p t = checkConj (conjunction sig t p)
 checkVariables :: Signature -> Term -> Bool
 checkVariables sig t = any isBottom (checkVar t)
   where checkVar v@(AVar x@(VarName _) _) = M.singleton x v
+        checkVar (AVar NoName _) = M.empty
         checkVar (Alias x t) = M.singleton x t
-        checkVar t@(Compl (AVar x _) _) = M.singleton x t
+        checkVar t@(Compl (AVar x@(VarName _) _) _) = M.singleton x t
+        checkVar (Compl (AVar NoName _) _) = M.empty
         checkVar (Appl f ts) = M.unionsWith (conjunction sig) (map checkVar ts)
 
 -------------------------------- getReachable: --------------------------------
@@ -308,20 +302,18 @@ emptyCache = Cache M.empty
 --   where res = getReach c sig p reach S.empty
 --         reach = Reach s r
 
-getReachable :: Signature -> Term -> TypeName -> S.Set Reach
-getReachable sig p s = getReach sig p (Reach s S.empty) S.empty
-
-getReachableR :: Signature -> Term -> TypeName -> S.Set Term -> S.Set Reach
-getReachableR sig p s r = getReach sig p (Reach s r) S.empty
-
-isInstantiable :: Signature -> Term -> TypeName -> S.Set Term -> Bool
-isInstantiable sig p s r = not (null (getReachMin sig p (Reach s r) S.empty))
+getReachable :: Signature -> AType -> S.Set Term -> S.Set Term
+getReachable sig (AType s p) r = S.map buildComplement reaches
+  where reaches = getReach sig s p r
+        buildComplement (Reach s' p')
+          | null p'   = (AVar NoName (AType s' p))
+          | otherwise = Compl (AVar NoName (AType s' p)) (sumTerm p')
 
 -- abandon hope all ye who enter here
-getReach :: Signature -> Term -> Reach -> S.Set Reach -> S.Set Reach
-getReach sig p (Reach s0 r0) reach
+getReach :: Signature -> TypeName -> Term -> S.Set Term -> S.Set Reach
+getReach sig s0 p r0
   | any isVar r0 = S.empty --computeQc filters out variables, so we just need to do this for r0
-  | otherwise    = computeReach s0 r0 reach
+  | otherwise    = computeReach s0 r0 S.empty
   where pSet = removePlusses p
         computeReach s r sReach
           | S.member (Reach s r) sReach = sReach
@@ -340,11 +332,14 @@ getReach sig p (Reach s0 r0) reach
                                   | null iReach = iReach -- not computing more reach when one qi has already failed
                                   | otherwise   = cR iReach -- sequentially computing reaches to avoid performing unions
 
+isInstantiable :: Signature -> TypeName -> Term -> S.Set Term -> Bool
+isInstantiable sig s p r = not (null (getReachMin sig s p r))
+
 -- stops when proof that the semantics is not empty
-getReachMin :: Signature -> Term -> Reach -> S.Set Reach -> S.Set Reach
-getReachMin sig p (Reach s0 r0) reach
+getReachMin :: Signature -> TypeName -> Term -> S.Set Term -> S.Set Reach
+getReachMin sig s0 p r0
   | any isVar r0 = S.empty
-  | otherwise    = computeReach s0 r0 reach
+  | otherwise    = computeReach s0 r0 S.empty
   where pSet = removePlusses p
         computeReach s r sReach
           | S.member (Reach s r) sReach = sReach
@@ -368,13 +363,14 @@ getReachMin sig p (Reach s0 r0) reach
 computeQc :: Signature -> FunName -> (S.Set Term) -> [[S.Set Term]]
 computeQc sig c r = foldl getDist [replicate (length d) S.empty] r
   where getDist tQc (Appl g ts)
-          | c == g    = foldl accuDist [] tQc
+          | c == g    = concatMap accuDist tQc
           | otherwise = tQc
-          where accuDist sQc q = (mapMaybe (distribute q) (zip [0..] ts)) ++ sQc
-                distribute q (i, t)
-                  | isVar t   = Nothing -- filter out variables to avoid empty semantics
-                  | otherwise = Just (pre ++ (S.insert t qi) : tail)
-                  where (pre, qi : tail) = splitAt i q
+          where accuDist q = distribute q ts
+                distribute [] [] = []
+                distribute (qi:ql) (ti:tl)
+                  | isVar ti  = tail -- filter out variables to avoid empty semantics
+                  | otherwise = ((S.insert ti qi) : ql) : tail
+                  where tail = map (qi:) (distribute ql tl)
         d = domain sig c
 
 isVar :: Term -> Bool
