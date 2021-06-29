@@ -251,41 +251,65 @@ checkTRS sig rules = snd (foldl accuCheck (emptyCache, M.empty) rules)
 checkRule :: Signature -> Cache -> Rule -> (Cache, M.Map Rule (Term,[Term]))
 checkRule sig c r@(Rule (Appl f _) _) = foldl accuCheck (c, M.empty) rules
   where accuCheck (cache, m) (Rule lhs rhs, p)
-          | checkPfree2 sig (rhs, p) = (cache, m)
-          | otherwise                = (cache, M.insert (Rule lhs rhs) (p, [rhs]) m)
---           | null fails = (cache2, m)
---           | otherwise  = (cache2, M.insert (Rule lhs equi) (p,fails) m)
---           where (cache1, equi) = buildEqui sig cache rhs
---                 (cache2, fails) = trace ("checking RULE " ++ show (Rule lhs equi)) (checkPfree sig cache1 (equi,p))
+          | isFLinear sig rhs = if null fails
+                                then (cache2, m)
+                                else (cache2, M.insert (Rule lhs equi) (p,fails) m)
+          | nlcheck           = (cache, m)
+          | otherwise         = (cache, M.insert (Rule lhs rhs) (p, [rhs]) m)
+          where (cache1, equi) = buildEqui sig cache rhs
+                (cache2, fails) = trace ("checking RULE " ++ show (Rule lhs equi)) (checkPfree sig cache1 (equi,p))
+                nlcheck = trace ("checking NL RULE " ++ show (Rule lhs rhs)) (checkPfree2 sig (rhs, p))
         rules = concatMap buildRule (map buildDomain (profile sig f))
         buildRule (_, Bottom) = []
         buildRule (ad, p) = zip (replaceVariables sig r ad) (repeat p)
         buildDomain (qs, p) = (zipWith AType d qs, p)
         d = domain sig f
 
+-- check that a Term has no shared variable in different parameters of
+-- a function symbol
+isFLinear :: Signature -> Term -> Bool
+isFLinear sig t0 = isJust (getOKVar t0)
+  where getOKVar (Alias x _) = Just (S.singleton x)
+        getOKVar (AVar x _) = Just (S.singleton x)
+        getOKVar (Compl (AVar x _) _) = Just (S.singleton x)
+        getOKVar (Appl f ts)
+          | (isFunc sig f) && not (checkInter vts) = Nothing
+          | otherwise                              = uVar
+          where vts = map getOKVar ts
+                uVar = foldr checkUnion (Just S.empty) vts
+                checkUnion Nothing _ = Nothing
+                checkUnion _ Nothing = Nothing
+                checkUnion (Just a) (Just b) = Just (S.union a b)
+                checkInter [] = True
+                checkInter (h:tail) = case h of
+                  Nothing  -> False
+                  Just vti -> (checkInter tail) && (all check (catMaybes tail))
+                                where check vtj = null (S.intersection vti vtj)
+
 -- check that a term is p-free
 -- parameters: Signature, Pattern p (should be a sum of constructor patterns), Rhs term of a rule (should be a qsymb)
 -- return a list of terms that do not satisfy the expected pattern-free property
 checkPfree :: Signature -> Cache -> (Term, Term) -> (Cache, [Term])
-checkPfree _ c (_, Bottom) = (c, [])
-checkPfree sig c (t, p) = accuCheck (c, []) t
-  where accuCheck (c'@(Cache m), l) u@(Appl _ ts) = case M.lookup (u,p) m of
-          Just res -> (c', res ++ l)
+checkPfree _ c0 (_, Bottom) = (c0, [])
+checkPfree sig c0 (t, p) = accuCheck (c0, []) t
+  where accuCheck (c@(Cache m), l) u@(Appl _ ts) = case M.lookup (u,p) m of
+          Just res -> (c, res ++ l)
           Nothing | check sig p u -> (Cache (M.insert (u, p) lSub mSub), lSub ++ l)
                   | otherwise        -> (Cache (M.insert (u, p) (u:lSub) mSub), u:(lSub ++ l))
-                  where (Cache mSub, lSub) = foldl accuCheck (c',[]) ts
-        accuCheck (c'@(Cache m), l) u@(AVar _ s) = case M.lookup (u',p) m of
-          Just res -> trace ("checked AVar " ++ show u) (c', res ++ l)
+                  where (Cache mSub, lSub) = foldl accuCheck (c,[]) ts
+        accuCheck (c@(Cache m), l) u@(AVar _ s) = case M.lookup (u',p) m of
+          Just res -> trace ("checked AVar " ++ show u) (c, res ++ l)
           Nothing | all (check sig p) reachables -> (Cache (M.insert (u', p) [] m), l)
                   | otherwise                    -> (Cache (M.insert (u', p) [u'] m), u':l)
                   where reachables = trace ("checking AVar " ++ show u) (getReachable sig s S.empty)
           where u' = AVar NoName s
-        accuCheck (c'@(Cache m), l) u@(Compl (AVar _ s) r) = case M.lookup (u',p) m of
-          Just res -> (c', res ++ l)
+        accuCheck (c@(Cache m), l) u@(Compl (AVar _ s) r) = case M.lookup (u',p) m of
+          Just res -> (c, res ++ l)
           Nothing | all (check sig p) reachables -> (Cache (M.insert (u', p) [] m), l)
                   | otherwise                    -> (Cache (M.insert (u', p) [u'] m), u':l)
                   where reachables = trace ("checking Compl " ++ show u) (getReachable sig s (removePlusses r))
           where u' = Compl (AVar NoName s) r
+        accuCheck (c, l) (Alias _ u) = accuCheck (c, l) u
 
 -- check that t X p reduces to Bottom
 -- with t a qaddt term and p a sum of constructor patterns
@@ -293,21 +317,67 @@ check :: Signature -> Term -> Term -> Bool
 check _ Bottom _ = True
 check sig p t = trace ("checking if BOTTOM: " ++ show t ++ " X " ++ show p) (checkConj (conjunction sig t p))
   where checkConj Bottom = True
-        checkConj t = all (checkVariables sig) (removePlusses t)
+        checkConj t = all (isBotMap . (getCheckMap sig (VarMap M.empty))) (removePlusses t)
 -- check sig t (Plus p1 p2) = (check sig t p1) && (check sig t p2)
 
--- check if a term has conflicting instances of a variable
--- if at least one variable has conflicting instances, returns true
--- else false
-checkVariables :: Signature -> Term -> Bool
-checkVariables sig t = trace ("checking Variables in " ++ show t) (any isBottom (checkVar t))
-  where checkVar v@(AVar x@(VarName _) _) = M.singleton x v
-        checkVar (AVar NoName _) = M.empty
-        checkVar (Alias x t) = M.singleton x t
-        checkVar t@(Compl (AVar x@(VarName _) _) _) = M.singleton x t
-        checkVar (Compl (AVar NoName _) _) = M.empty
-        checkVar (Appl f ts) = M.unionsWith (conjunction sig) (map checkVar ts)
 
+-- check that a term is p-free
+-- parameters: Signature, Pattern p (should be a sum of constructor patterns), Rhs term of a rule (should be a qsymb)
+-- return a list of terms that do not satisfy the expected pattern-free property
+checkPfree2 :: Signature -> (Term, Term) -> Bool
+checkPfree2 _ (_, Bottom) = True
+checkPfree2 sig (t0, p0) = trace ("checking " ++ show p0 ++ "-free: " ++ show t0) (recCheck t0 [p0] (VarMap M.empty) S.empty)
+  where convert fSet x@(AVar _ _)  = (fSet, x)
+        convert fSet a@(Alias _ _) = (fSet, a)
+        convert fSet u@(Compl _ _) = (fSet, u)
+        convert fSet u@(Appl f us)
+          | isFunc sig f = (S.insert u fSet, v)
+          | otherwise    = (fSet', Appl f vs)
+          where (fSet', vs) = foldr accuConvert (fSet, []) us
+                v = AVar (VarName (show u)) (AType (range sig f) Bottom)
+        accuConvert ti (mi, tl) = (mi', ti':tl)
+          where (mi', ti') = convert mi ti
+        recCheck _ _ BotMap _ = True
+        recCheck v@(AVar x _) pl cMap fSet = nextF fSet (checkInsert sig x (v, pl) cMap)
+        recCheck (Alias x t) pl cMap fSet = nextF fSet (checkInsert sig x (t, pl) cMap)
+        recCheck t@(Appl f ts) pl cMap@(VarMap vMap) fSet = all ((checkNextF fSet') . (getCheckMap sig cMap)) tmSet
+          where (fSet', ts') = foldr accuConvert (fSet, []) ts
+                tmSet = removePlusses (complementA sig (Appl f ts') (sumTerm cl))
+                  where cl | isFunc sig f = map ((Appl f) . (zipWith buildVar d)) profiles
+                           | otherwise    = zipWith (flip buildVar) pl (repeat s)
+                           where s = range sig f
+                                 d = domain sig f
+                                 buildVar si qi = AVar NoName (AType si qi)
+                                 profiles = selectProfiles sig f u pl'
+                                 (u, pl') = case M.lookup (VarName (show t)) vMap of
+                                   Just (v, ql) -> (v, pl++ql)
+                                   Nothing -> (AVar NoName (AType s Bottom), pl)
+        nextF _ BotMap = True
+        nextF fSet cMap = case S.maxView fSet of
+          Nothing          -> False
+          Just (tf, fSet') -> recCheck tf [] cMap fSet'
+        checkNextF fSet cMap
+          | isBotMap cMap = True
+          | otherwise     = case S.maxView fSet of
+                              Nothing          -> False
+                              Just (tf, fSet') -> recCheck tf [] cMap fSet'
+
+selectProfiles :: Signature -> FunName -> Term -> [Term] -> [[Term]]
+selectProfiles sig f t ql = map fst (fst (getCombinations part))
+  where part = partition checkProfile (profile sig f)
+        getCombinations (okl, []) =  (okl, [])
+        getCombinations (okl, ((d,r):tail)) = (recokl, (d,r):reckol)
+          where (recokl, reckol) = case getCombinations (okl, tail) of
+                  (oktail, kotail) -> (oktail ++ okdist, kotail ++ kodist)
+                    where (okdist, kodist) = partition checkProfile (map sumProfile kotail)
+                sumProfile (d', r') = (zipWith plus d d', plus r r')
+        checkProfile (_, r) = all checkRange (removePlusses (conjunction sig t (AVar NoName (AType s r))))
+        checkRange u = not (checkInstance sig u ql)
+        s = range sig f
+
+
+
+------------------------------ check Variables: -------------------------------
 
 data CheckMap = VarMap (M.Map VarName (Term, [Term]))
               | BotMap
@@ -365,57 +435,6 @@ isBotMap :: CheckMap -> Bool
 isBotMap BotMap = True
 isBotMap (VarMap vMap) = any (isBottom.fst) vMap
 
--- check that a term is p-free
--- parameters: Signature, Pattern p (should be a sum of constructor patterns), Rhs term of a rule (should be a qsymb)
--- return a list of terms that do not satisfy the expected pattern-free property
-checkPfree2 :: Signature -> (Term, Term) -> Bool
-checkPfree2 _ (_, Bottom) = True
-checkPfree2 sig (t0, p0) = trace ("checking " ++ show p0 ++ "-free: " ++ show t0) (recCheck t0 [p0] (VarMap M.empty) [])
-  where convert fSet x@(AVar _ _)  = (fSet, x)
-        convert fSet a@(Alias _ _) = (fSet, a)
-        convert fSet u@(Compl _ _) = (fSet, u)
-        convert fSet u@(Appl f us)
-          | isFunc sig f = (S.insert u fSet, v)
-          | otherwise    = (fSet', Appl f vs)
-          where (fSet', vs) = foldr accuConvert (fSet, []) us
-                v = AVar (VarName (show u)) (AType (range sig f) Bottom)
-        accuConvert ti (mi, tl) = (mi', ti':tl)
-          where (mi', ti') = convert mi ti
-        recCheck _ _ BotMap _ = True
-        recCheck v@(AVar x _) pl cMap fList = nextF fList (checkInsert sig x (v, pl) cMap)
-        recCheck (Alias x t) pl cMap fList = nextF fList (checkInsert sig x (t, pl) cMap)
-        recCheck t@(Appl f ts) pl cMap@(VarMap vMap) fList = all ((checkNextF (S.toList fSet)) . (getCheckMap sig cMap)) tmSet
-          where (fSet, ts') = foldr accuConvert (S.fromList fList, []) ts
-                tmSet = removePlusses (complementA sig (Appl f ts') (sumTerm cl))
-                  where cl | isFunc sig f = map ((Appl f) . (zipWith buildVar d)) profiles
-                           | otherwise    = zipWith (flip buildVar) pl (repeat s)
-                           where s = range sig f
-                                 d = domain sig f
-                                 buildVar si qi = AVar NoName (AType si qi)
-                                 profiles = selectProfiles sig f u pl'
-                                 (u, pl') = case M.lookup (VarName (show t)) vMap of
-                                   Just (v, ql) -> (v, pl++ql)
-                                   Nothing -> (AVar NoName (AType s Bottom), pl)
-        nextF _ BotMap = True
-        nextF [] _ = False
-        nextF (tf:fList) cMap = recCheck tf [] cMap fList
-        checkNextF [] cMap = isBotMap cMap
-        checkNextF (tf:fList) cMap
-          | isBotMap cMap = True
-          | otherwise     = recCheck tf [] cMap fList
-
-selectProfiles :: Signature -> FunName -> Term -> [Term] -> [[Term]]
-selectProfiles sig f t ql = map fst (fst (getCombinations part))
-  where part = partition checkProfile (profile sig f)
-        getCombinations (okl, []) =  (okl, [])
-        getCombinations (okl, ((d,r):tail)) = (recokl, (d,r):reckol)
-          where (recokl, reckol) = case getCombinations (okl, tail) of
-                  (oktail, kotail) -> (oktail ++ okdist, kotail ++ kodist)
-                    where (okdist, kodist) = partition checkProfile (map sumProfile kotail)
-                sumProfile (d', r') = (zipWith plus d d', plus r r')
-        checkProfile (_, r) = all checkRange (removePlusses (conjunction sig t (AVar NoName (AType s r))))
-        checkRange u = not (checkInstance sig u ql)
-        s = range sig f
 
 
 -------------------------------- getReachable: --------------------------------
