@@ -3,7 +3,7 @@
 module FreeCheck (checkTRS) where
 
 import Debug.Trace
-import Data.List ( partition, (\\) )
+import Data.List ( isSubsequenceOf, partition, (\\) )
 import Data.Maybe
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -14,7 +14,11 @@ import Signature
 
 isBottom :: Term -> Bool
 isBottom Bottom = True
-isBottom t = False
+isBottom _ = False
+
+collect :: Term -> [Term]
+collect (AVar _ (AType s p)) = [p]
+collect (Plus t1 t2) = (collect t1) ++ (collect t2)
 
 -- interleave abc ABC = Abc, aBc, abC
 interleave :: [a] -> [a] -> [[a]]
@@ -103,14 +107,10 @@ complementA sig p1 p2 = p1 \\ p2
         | checkInstance sig v ql = Compl v t --Alias x (Compl (AVar NoName sp) t)
         | otherwise              = Bottom                                 --C3
         where ql = collect t
-              collect (Plus t1 t2) = (collect t1) ++ (collect t2)
-              collect (AVar _ (AType _ q)) = [q]
     a@(Alias x p) \\ t
         | checkInstance sig p ql = Compl (Alias x p) t
         | otherwise              = Bottom                                 --C3'
         where ql = collect t
-              collect (Plus t1 t2) = (collect t1) ++ (collect t2)
-              collect (AVar _ (AType _ q)) = [q]
 --    p1 \\ Alias x p2 = p1 \\ p2
 
 -------------------------------------------------------------------------------
@@ -278,13 +278,13 @@ checkPfree sig c (t, p) = accuCheck (c, []) t
           Just res -> trace ("checked AVar " ++ show u) (c', res ++ l)
           Nothing | all (check sig p) reachables -> (Cache (M.insert (u', p) [] m), l)
                   | otherwise                    -> (Cache (M.insert (u', p) [u'] m), u':l)
-                  where reachables = trace ("checking AVar " ++ show u) getReachable sig s S.empty
+                  where reachables = trace ("checking AVar " ++ show u) (getReachable sig s S.empty)
           where u' = AVar NoName s
         accuCheck (c'@(Cache m), l) u@(Compl (AVar _ s) r) = case M.lookup (u',p) m of
-          Just res -> trace ("checked Compl " ++ show u) (c', res ++ l)
+          Just res -> (c', res ++ l)
           Nothing | all (check sig p) reachables -> (Cache (M.insert (u', p) [] m), l)
                   | otherwise                    -> (Cache (M.insert (u', p) [u'] m), u':l)
-                  where reachables = trace ("checking Compl " ++ show u) getReachable sig s (removePlusses r)
+                  where reachables = trace ("checking Compl " ++ show u) (getReachable sig s (removePlusses r))
           where u' = Compl (AVar NoName s) r
 
 -- check that t X p reduces to Bottom
@@ -309,12 +309,68 @@ checkVariables sig t = trace ("checking Variables in " ++ show t) (any isBottom 
         checkVar (Appl f ts) = M.unionsWith (conjunction sig) (map checkVar ts)
 
 
+data CheckMap = VarMap (M.Map VarName (Term, [Term]))
+              | BotMap
+
+checkGlue :: Signature -> (Term, [Term]) -> (Term, [Term]) -> (Term, [Term])
+checkGlue _ (Bottom, _) (_, _) = (Bottom, [])
+checkGlue _ (_, _) (Bottom, _) = (Bottom, [])
+checkGlue sig (AVar _ _, q1) (t2, q2)
+  | checkInstance sig t2 ql = (t2, ql)
+  | otherwise               = (Bottom, [])
+  where ql = q1 ++ q2
+checkGlue sig (t1, q1) (AVar _ _, q2)
+  | checkInstance sig t1 ql = (t1, ql)
+  | otherwise               = (Bottom, [])
+  where ql = q1 ++ q2
+checkGlue sig (t1, q1) (t2, q2)
+  | checkInstance sig txt ql = (txt, ql)
+  | otherwise                = (Bottom, [])
+  where txt = conjunction sig t1 t2
+        ql = q1 ++ q2
+
+checkInsert :: Signature -> VarName -> (Term, [Term]) -> CheckMap -> CheckMap
+checkInsert _ _ _ BotMap = BotMap
+-- checkInsert sig x tq@(t, q)  (VarMap vMap) = VarMap (M.alter glue x vMap)
+--   where glue (Just tq') = Just (checkGlue sig tq tq')
+--         glue Nothing | checkInstance sig t q = Just tq
+--                      | otherwise             = Just (Bottom, [])
+checkInsert sig x tq@(AVar _ _, q0) (VarMap vMap)
+  | checkInstance sig t' q' = VarMap vMap'
+  | otherwise               = BotMap
+  where ((t', q'), vMap') = case M.insertLookupWithKey glue x tq vMap of
+          (Nothing    , rMap) -> (tq, rMap)
+          (Just (t, q), rMap) -> ((t, q++q0), rMap)
+        glue _ _ (t, q) = (t, q++q0)
+checkInsert sig x (t0, q0) (VarMap vMap)
+  | checkInstance sig t' q' = VarMap (M.insert x (t', q') vMap)
+  | otherwise               = BotMap
+  where (t', q') = case M.lookup x vMap of
+                     Nothing -> (t0, q0)
+                     Just (t, q) -> (conjunction sig t0 t, q++q0)
+
+getCheckMap :: Signature -> CheckMap -> Term -> CheckMap
+getCheckMap _ BotMap _ = BotMap
+getCheckMap _ cMap (AVar NoName _) = cMap
+getCheckMap _ cMap (Compl (AVar NoName _) _) = cMap
+getCheckMap sig cMap (Appl f ts) = foldl (getCheckMap sig) cMap ts
+getCheckMap sig (VarMap vMap) t = VarMap m
+  where m = case t of
+              AVar x _             -> M.insertWith (checkGlue sig) x (t, []) vMap
+              Alias x u            -> M.insertWith (checkGlue sig) x (u, []) vMap
+              Compl (Alias x u) q  -> M.insertWith (checkGlue sig) x (u, collect q) vMap
+              Compl v@(AVar x _) q -> M.insertWith (checkGlue sig) x (v, collect q) vMap
+
+isBotMap :: CheckMap -> Bool
+isBotMap BotMap = True
+isBotMap (VarMap vMap) = any (isBottom.fst) vMap
+
 -- check that a term is p-free
 -- parameters: Signature, Pattern p (should be a sum of constructor patterns), Rhs term of a rule (should be a qsymb)
 -- return a list of terms that do not satisfy the expected pattern-free property
 checkPfree2 :: Signature -> (Term, Term) -> Bool
 checkPfree2 _ (_, Bottom) = True
-checkPfree2 sig (t0, p0) = trace ("checking " ++ show p0 ++ "-free: " ++ show t0) recCheck t0 [p0] M.empty []
+checkPfree2 sig (t0, p0) = trace ("checking " ++ show p0 ++ "-free: " ++ show t0) (recCheck t0 [p0] (VarMap M.empty) [])
   where convert fSet x@(AVar _ _)  = (fSet, x)
         convert fSet a@(Alias _ _) = (fSet, a)
         convert fSet u@(Compl _ _) = (fSet, u)
@@ -325,19 +381,10 @@ checkPfree2 sig (t0, p0) = trace ("checking " ++ show p0 ++ "-free: " ++ show t0
                 v = AVar (VarName (show u)) (AType (range sig f) Bottom)
         accuConvert ti (mi, tl) = (mi', ti':tl)
           where (mi', ti') = convert mi ti
-        recCheck t@(AVar x (AType s _)) pl vMap fList
-          | checkInstance sig t' pl' = checkNextF (M.insert x (t', pl') vMap) fList
-          | otherwise                = True
-          where (t', pl') = case M.lookup x vMap of
-                  Just (u, ql) -> (u, pl++ql)
-                  Nothing      -> (t, pl)
-        recCheck (Alias x t) pl vMap fList
-          | checkInstance sig tXu pl' = checkNextF (M.insert x (tXu, pl') vMap) fList
-          | otherwise                 = True
-          where (tXu, pl') = case M.lookup x vMap of
-                  Just (u, ql) -> (conjunction sig t u, pl++ql)
-                  Nothing      -> (t, pl)
-        recCheck t@(Appl f ts) pl vMap fList = all (checkVarMap . (getVarMap vMap)) tmSet
+        recCheck _ _ BotMap _ = True
+        recCheck v@(AVar x _) pl cMap fList = nextF fList (checkInsert sig x (v, pl) cMap)
+        recCheck (Alias x t) pl cMap fList = nextF fList (checkInsert sig x (t, pl) cMap)
+        recCheck t@(Appl f ts) pl cMap@(VarMap vMap) fList = all ((checkNextF (S.toList fSet)) . (getCheckMap sig cMap)) tmSet
           where (fSet, ts') = foldr accuConvert (S.fromList fList, []) ts
                 tmSet = removePlusses (complementA sig (Appl f ts') (sumTerm cl))
                   where cl | isFunc sig f = map ((Appl f) . (zipWith buildVar d)) profiles
@@ -349,30 +396,13 @@ checkPfree2 sig (t0, p0) = trace ("checking " ++ show p0 ++ "-free: " ++ show t0
                                  (u, pl') = case M.lookup (VarName (show t)) vMap of
                                    Just (v, ql) -> (v, pl++ql)
                                    Nothing -> (AVar NoName (AType s Bottom), pl)
-                checkVarMap vMap
-                  | any isLBottom vMap = True
-                  | otherwise          = checkNextF vMap (S.toList fSet)
-                  where isLBottom (Bottom, _) = True
-                        isLBottom (_, _) = False
-        getVarMap vMap t = case t of
-          AVar NoName _           -> vMap
-          Compl (AVar NoName _) _ -> vMap
-          AVar x _                -> M.insertWith glue x (t, []) vMap
-          Alias x u               -> M.insertWith glue x (u, []) vMap
-          Compl (Alias x u) q     -> M.insertWith glue x (u, strip q) vMap
-          Compl v@(AVar x _) q    -> M.insertWith glue x (v, strip q) vMap
-          Appl f ts               -> foldl getVarMap vMap ts
-          where strip (Plus q1 q2) = (strip q1) ++ (strip q2)
-                strip (AVar _ (AType _ q)) = [q]
-                glue (Bottom, _) (_, _) = (Bottom, [])
-                glue (_, _) (Bottom, _) = (Bottom, [])
-                glue (t1, q1) (t2, q2)
-                 | checkInstance sig txt ql = (txt, ql)
-                 | otherwise                = (Bottom, [])
-                 where txt = conjunction sig t1 t2
-                       ql = q1 ++ q2
-        checkNextF _ [] = False
-        checkNextF vMap (tf:fList) = recCheck tf [] vMap fList
+        nextF _ BotMap = True
+        nextF [] _ = False
+        nextF (tf:fList) cMap = recCheck tf [] cMap fList
+        checkNextF [] cMap = isBotMap cMap
+        checkNextF (tf:fList) cMap
+          | isBotMap cMap = True
+          | otherwise     = recCheck tf [] cMap fList
 
 selectProfiles :: Signature -> FunName -> Term -> [Term] -> [[Term]]
 selectProfiles sig f t ql = map fst (fst (getCombinations part))
@@ -502,13 +532,14 @@ checkInstance :: Signature -> Term -> [Term] -> Bool
 checkInstance _ Bottom _ = False
 checkInstance sig t0 q0
   | any isBottom q0 = False
-  | otherwise       = computeInstance S.empty t0 q0
+  | otherwise       = computeInstance M.empty t0 q0
   where computeInstance _ _ [] = True
-        computeInstance reach t q
-          | S.member (t, q) reach = False
-          | otherwise             = any conjInstance powerQ
-          where powerQ = foldl powerConj [([], t)] q
-                subReach = S.insert (t, q) reach
+        computeInstance reach t q = case M.lookup t reach of
+          Nothing -> any conjInstance powerQ
+          Just q' | isSubsequenceOf q' q -> False
+                  | otherwise            -> any conjInstance powerQ
+          where powerQ = foldr powerConj [([], t)] q
+                subReach = M.insert t q reach
                 conjInstance (qSet, qConj) = any subInstance (removePlusses qConj)
                   where subInstance (Appl _ []) = null qDiff
                         subInstance (Appl _ ts) = any (all (uncurry (computeInstance subReach))) (computeQt ts qDiff)
@@ -516,7 +547,7 @@ checkInstance sig t0 q0
                         subInstance (Compl (AVar _ s) r) = any subInstance (computePatterns s (removePlusses r))
                         subInstance (Alias _ u) = subInstance u
                         qDiff = q \\ qSet
-        powerConj l q = concatMap accuConj l
+        powerConj q l = concatMap accuConj l
           where accuConj (ql, t)
                   | isBottom txq = [(ql, t)]
                   | otherwise    = (q:ql, txq):[(ql, t)]
@@ -533,8 +564,8 @@ checkInstance sig t0 q0
 
 
 computeQt :: [Term] -> [Term] -> [[(Term, [Term])]]
-computeQt ts qs = foldl getDist [map (\t -> (t,[])) ts] qs
-  where getDist tQ q = concatMap distribute tQ
+computeQt ts qs = foldr getDist [zip ts (repeat [])] qs
+  where getDist q tQ = concatMap distribute tQ
           where distribute [] = []
                 distribute ((t,xl):ql) = ((t, q:xl):ql):(map ((t,xl):) (distribute ql))
 
