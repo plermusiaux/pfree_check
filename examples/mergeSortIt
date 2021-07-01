@@ -49,9 +49,9 @@ mergeP(pair(cons(x@(A()+B()), l1), cons(y@(A()+B()), l2))) -> ite(leq(x, y), con
 
 sort(nil()) -> nil()
 sort(cons(x, nil())) -> cons(x, nil())
-sort(cons(x, cons(y, l))) -> mergeP(sortP(split(cons(x, cons(y, l)))))
+sort(cons(x, cons(y, l))) -> mergeP(sortP(split(cons(x, cons(y, l)), nil(), nil())))
 
-sortP(pair(l1, l2)) -> pair()
+sortP(pair(l1, l2)) -> pair(sort(l1), sort(l2))
 
 // [(
 // mergeP(pair(cons(x@x : Value[-cons(B(), cons(A(), l : List))], l1@(l1 : List[-cons(B(), cons(A(), l : List))] \ cons(A(), l : List))), cons(y@(y : Value[-cons(B(), cons(A(), l : List))] \ B()), l2@l2 : List[-cons(B(), cons(A(), l : List))]))) ->
