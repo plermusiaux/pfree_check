@@ -32,6 +32,6 @@ mergeP(pair(cons(B(), l1), cons(B(), l2))) -> cons(B(), mergeP(pair(cons(B(), l1
 
 sort(nil()) -> nil()
 sort(cons(x, nil())) -> cons(x, nil())
-sort(cons(x, cons(y, l))) -> mergeP(sortP(split(cons(x, cons(y, l)))))
+sort(cons(x, cons(y, l))) -> mergeP(sortP(split(cons(x, cons(y, l)), nil(), nil())))
 
-sortP(pair(l1, l2)) -> pair()
+sortP(pair(l1, l2)) -> pair(sort(l1), sort(l2))

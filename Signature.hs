@@ -28,6 +28,7 @@ import Datatypes (FunName, TypeName, Constructor(..), Function(..), Signature(..
 import Data.List ( find )
 import Data.Either
 import Data.Maybe
+import Util ( equalLength )
 
 _funName (Constructor f _ _) = f
 _Cdomain (Constructor _ d _) = d
@@ -90,8 +91,10 @@ typeCheck sig t s = case (t # s) of
   Just (v, si) -> error (show v ++ " does not match expected type " ++ show si)
   where
     u@(Appl f tl) # so
-      | (range sig f /= so) = Just (u, so)
-      | otherwise           = fromMaybe Nothing (find isJust (zipWith (#) tl (domain sig f)))
+      | (range sig f /= so)    = Just (u, so)
+      | not (equalLength tl d) = Just (u, so)
+      | otherwise              = fromMaybe Nothing (find isJust (zipWith (#) tl d))
+      where d = domain sig f
     (Alias _ u) # so = u # so
     Bottom # so = Just (Bottom, so)
     u@(AVar _ (AType s1 _)) # s2
