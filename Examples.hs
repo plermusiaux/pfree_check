@@ -423,9 +423,9 @@ mergeSort = "\
 \\n\
 \sort(nil()) -> nil()\n\
 \sort(cons(x, nil())) -> cons(x, nil())\n\
-\sort(cons(x, cons(y, l))) -> mergeP(sortP(split(cons(x, cons(y, l)))))\n\
+\sort(cons(x, cons(y, l))) -> mergeP(sortP(split(cons(x, cons(y, l)), nil(), nil())))\n\
 \\n\
-\sortP(pair(l1, l2)) -> pair()"
+\sortP(pair(l1, l2)) -> pair(sort(l1), sort(l2))"
 
 multiply0 = "\
 \CONSTRUCTORS\n\
