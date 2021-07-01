@@ -75,28 +75,33 @@ isFunc (Signature _ funs) f = any isF funs
   where isF (Function g _ _ _) = f==g
 
 hasType :: Signature -> Term -> TypeName -> Bool
-hasType sig t s = t # s
+hasType sig t0 s0 = t0 # s0
   where
-    (Appl f _) # so = range sig f == so
-    (Alias _ u) # so = u # so
+    (Appl f _) # s = range sig f == s
+    (Alias _ u) # s = u # s
     Bottom # _ = False
     (AVar _ (AType s1 _)) # s2 = s1 == s2
-    (Compl u _) # so = u # so
-    (Plus u1 u2) # so = u1 # so || u2 # so
+    (Compl u _) # s = u # s
+    (Plus u1 u2) # s = u1 # s || u2 # s
 
 typeCheck :: Signature -> Term -> TypeName -> Term
-typeCheck sig t s = case (t # s) of
-  Nothing      -> t
-  Just (v, si) -> error (show v ++ " does not match expected type " ++ show si)
+typeCheck sig t0 s0 = case (t0 # s0) of
+  Nothing      -> t0
+  Just (v, s) -> error (show v ++ " does not match expected type " ++ show s)
   where
-    u@(Appl f tl) # so
-      | (range sig f /= so) = Just (u, so)
-      | otherwise           = fromMaybe Nothing (find isJust (zipWith (#) tl (domain sig f)))
-    (Alias _ u) # so = u # so
-    Bottom # so = Just (Bottom, so)
+    t@(Appl f tl) # s
+      | (range sig f /= s)    = Just (t, s)
+      | otherwise              = checkArg tl (domain sig f)
+      where checkArg [] [] = Nothing
+            checkArg (ti:tip) (si:sip) = case ti # si of
+              Nothing -> checkArg tip sip
+              just    -> just
+            checkArg _ _ = Just (t, s)
+    (Alias _ u) # s = u # s
+    Bottom # s = Just (Bottom, s)
     u@(AVar _ (AType s1 _)) # s2
       | s1 /= s2  = Just (u, s2)
       | otherwise = Nothing
-    (Compl u _) # so = u # so
-    (Plus u1 u2) # so = maybe (u2 # so) Just (u1 # so)
+    (Compl u _) # s = u # s
+    (Plus u1 u2) # s = maybe (u2 # s) Just (u1 # s)
 
