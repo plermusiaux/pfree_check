@@ -3,7 +3,7 @@
 module FreeCheck (checkTRS) where
 
 import Debug.Trace
-import Data.List ( isSubsequenceOf, partition, (\\) )
+import Data.List ( isSubsequenceOf, partition )
 import Data.Maybe
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -559,17 +559,16 @@ checkInstance sig t0 q0
                   | otherwise            -> any conjInstance powerQ
           where powerQ = foldr powerConj [([], t)] q
                 subReach = M.insert t q reach
-                conjInstance (qSet, qConj) = any subInstance (removePlusses qConj)
+                conjInstance (qDiff, qConj) = any subInstance (removePlusses qConj)
                   where subInstance (Appl _ []) = null qDiff
                         subInstance (Appl _ ts) = any (all (uncurry (computeInstance subReach))) (computeQt ts qDiff)
                         subInstance (AVar _ s) = any subInstance (computePatterns s S.empty)
                         subInstance (Compl (AVar _ s) r) = any subInstance (computePatterns s (removePlusses r))
                         subInstance (Alias _ u) = subInstance u
-                        qDiff = q \\ qSet
         powerConj q l = concatMap accuConj l
           where accuConj (ql, t)
-                  | isBottom txq = [(ql, t)]
-                  | otherwise    = (q:ql, txq):[(ql, t)]
+                  | isBottom txq = [(q:ql, t)]
+                  | otherwise    = (ql, txq):[(q:ql, t)]
                   where txq = conjunction sig t q
         computePatterns (AType s p) rSet = concatMap buildPatterns (ctorsOfRange sig s)
           where prSet = S.union rSet (removePlusses p)
