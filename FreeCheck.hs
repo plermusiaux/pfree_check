@@ -157,20 +157,20 @@ replaceVariables sig (Rule (Appl f ls) rhs) d = foldl accuRule [] lterms
 
 -- return the semantics equivalent of a term
 buildEqui :: Signature -> Cache -> Term -> (Cache, Term)
-buildEqui sig c t@(Appl f ts)
+buildEqui sig c0 t@(Appl f ts)
   | isFunc sig f = (c2, AVar (VarName (show t)) (AType (range sig f) p))
   | otherwise    = (c1, Appl f equis)
-  where (c1, equis) = foldr buildSub (c, []) ts
+  where (c1, equis) = foldr buildSub (c0, []) ts
         buildSub t (cache, l) = (cache', t':l)
           where (cache', t') = buildEqui sig cache t
         (c2, p) = foldl accuCheck (c1, Bottom) (profile sig f)
         accuCheck (cache, p) (qs, q)
           | subFree   = (cache', plus p q)
           | otherwise = (cache', p)
-          where (cache', subFree) = foldl subCheck (cache, True) (zip equis qs)
-        subCheck (cache, False) _ = (cache, False)
-        subCheck (cache, True) (_, Bottom) = (cache, True)
-        subCheck (cache, True) tp = (cache', null fails)
+          where (cache', subFree) = (foldr subCheck (\c -> (c, True)) (zip equis qs)) cache
+        subCheck tp next cache
+          | null fails = next cache'
+          | otherwise = (cache', False)
           where (cache', fails) = checkPfree sig cache tp
 buildEqui _ c t = (c, t)
 
@@ -313,22 +313,22 @@ getReach sig s0 p r0
   | any isVar r0 = S.empty --computeQc filters out variables, so we just need to do this for r0
   | otherwise    = computeReach s0 r0 S.empty
   where pSet = removePlusses p
+        recCompute (si, qi) next dReach
+          | null iReach = iReach -- not computing more reach when one qi has already failed
+          | otherwise   = next iReach -- sequentially computing reaches to avoid performing unions
+          where iReach = computeReach si qi dReach
         computeReach s r sReach
           | S.member (Reach s r) sReach = sReach
           | otherwise                   = fromMaybe S.empty (foldl accuReach Nothing (ctorsOfRange sig s))
           where r' | hasType sig p s = S.union r pSet
                    | otherwise       = r
                 reach' = S.insert (Reach s r) sReach
-                accuReach cReach c = foldl accuSubReach cReach (computeQc sig c r')
+                accuReach dReach c = foldl accuSubReach dReach (computeQc sig c r')
                   where d = domain sig c
-                        accuSubReach qReach q
-                          | null tReach = qReach -- ignores result when empty, ie not instantiable
+                        accuSubReach rReach q
+                          | null tReach = rReach -- ignores result when empty, ie not instantiable
                           | otherwise   = Just tReach
-                          where tReach = foldl compute (fromMaybe reach' qReach) cRs
-                                cRs = zipWith computeReach d q
-                                compute iReach cR
-                                  | null iReach = iReach -- not computing more reach when one qi has already failed
-                                  | otherwise   = cR iReach -- sequentially computing reaches to avoid performing unions
+                          where tReach = (foldr recCompute id (zip d q)) (fromMaybe reach' rReach)
 
 isInstantiable :: Signature -> TypeName -> Term -> S.Set Term -> Bool
 isInstantiable sig s p r = not (null (getReachMin sig s p r))
@@ -339,28 +339,29 @@ getReachMin sig s0 p r0
   | any isVar r0 = S.empty
   | otherwise    = computeReach s0 r0 S.empty
   where pSet = removePlusses p
+        recCompute (si, qi) next rReach
+          | null iReach = iReach
+          | otherwise   = next iReach
+          where iReach = computeReach si qi rReach
         computeReach s r sReach
           | S.member (Reach s r) sReach = sReach
-          | otherwise                   = fromMaybe S.empty (foldl accuReach Nothing (ctorsOfRange sig s))
+          | otherwise                   = foldr accuReach S.empty (ctorsOfRange sig s)
           where r' | hasType sig p s = S.union r pSet
                    | otherwise       = r
                 reach' = S.insert (Reach s r) sReach
-                accuReach m@(Just _) _ = m
-                accuReach Nothing    c = foldl accuSubReach Nothing (computeQc sig c r')
-                  where d = domain sig c
-                        accuSubReach m@(Just _) _ = m
-                        accuSubReach Nothing    q
-                          | null tReach = Nothing
-                          | otherwise   = Just tReach
-                          where tReach = foldl compute reach' cRs
-                                cRs = zipWith computeReach d q
-                                compute iReach cR
-                                  | null iReach = iReach
-                                  | otherwise   = cR iReach
+                accuReach c dReach
+                  | null qReach = dReach
+                  | otherwise   = qReach
+                  where qReach = foldr accuSubReach S.empty (computeQc sig c r')
+                        d = domain sig c
+                        accuSubReach q rReach
+                          | null tReach = rReach
+                          | otherwise   = tReach
+                          where tReach = (foldr recCompute id (zip d q)) reach'
 
 computeQc :: Signature -> FunName -> (S.Set Term) -> [[S.Set Term]]
-computeQc sig c r = foldl getDist [replicate (length d) S.empty] r
-  where getDist tQc (Appl g ts)
+computeQc sig c r = foldr getDist [replicate (length d) S.empty] r
+  where getDist (Appl g ts) tQc
           | c == g    = concatMap accuDist tQc
           | otherwise = tQc
           where accuDist q = distribute q ts
