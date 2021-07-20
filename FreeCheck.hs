@@ -452,6 +452,12 @@ data Cache = Cache (M.Map (Term, Term) [Term])
 
 emptyCache = Cache M.empty
 
+linearize :: Term -> Term
+linearize (Alias x u) = linearize u
+linearize (Compl (AVar x s) r) = Compl (AVar NoName s) r
+linearize (AVar x s) = AVar NoName s
+linearize t = t
+
 -- getReachable :: Cache -> Signature -> Term -> TypeName -> (Cache, S.Set Reach)
 -- getReachable c@(Cache m1 m2) sig p s = case M.lookup (p, reach) m1 of
 --   Just a  -> (c, a)
@@ -551,34 +557,32 @@ checkInstance :: Signature -> Term -> [Term] -> Bool
 checkInstance _ Bottom _ = False
 checkInstance sig t0 q0
   | any isBottom q0 = False
-  | otherwise       = computeInstance M.empty t0 q0
-  where computeInstance _ _ [] = True
-        computeInstance reach t q = case M.lookup t reach of
-          Nothing -> any conjInstance powerQ
-          Just q' | isSubsequenceOf q' q -> False
-                  | otherwise            -> any conjInstance powerQ
-          where powerQ = foldr powerConj [([], t)] q
-                subReach = M.insert t q reach
-                conjInstance (qDiff, qConj) = any subInstance (removePlusses qConj)
-                  where subInstance (Appl _ []) = null qDiff
-                        subInstance (Appl _ ts) = any (all (uncurry (computeInstance subReach))) (computeQt ts qDiff)
-                        subInstance (AVar _ s) = any subInstance (computePatterns s S.empty)
-                        subInstance (Compl (AVar _ s) r) = any subInstance (computePatterns s (removePlusses r))
-                        subInstance (Alias _ u) = subInstance u
-        powerConj q l = concatMap accuConj l
-          where accuConj (ql, t)
-                  | isBottom txq = [(q:ql, t)]
-                  | otherwise    = (ql, txq):[(q:ql, t)]
-                  where txq = conjunction sig t q
-        computePatterns (AType s p) rSet = concatMap buildPatterns (ctorsOfRange sig s)
-          where prSet = S.union rSet (removePlusses p)
-                buildPatterns f =  mapMaybe buildCompl (computeQc sig f prSet)
-                  where buildCompl qs
-                          | any isBottom xqs = Nothing
-                          | otherwise = Just (Appl f xqs)
-                          where xqs = zipWith (complementR sig) xs (map sumTerm qs)
-                        xs = map buildVar (domain sig f)
-                        buildVar si = AVar NoName (AType si p)
+  | otherwise       = snd (computeInstance M.empty t0 q0)
+  where powerQ0 = foldr (powerConj sig) [] q0
+        computeInstance reach Bottom _ = (reach, False)
+        computeInstance reach t [] = (reach, True)
+        computeInstance reach t q = case M.lookup t' reach of
+          Nothing -> (foldr conjInstance (\rConj -> (rConj, False)) powerQ) subReach
+          Just q' | isSubsequenceOf q' q -> (reach, False)
+                  | otherwise            -> (foldr conjInstance (\rConj -> (rConj, False)) powerQ) subReach
+          where t' = linearize t
+                powerQ = selectPConj sig t' q powerQ0
+                subReach = M.insert t' q reach
+                conjInstance (qDiff, qConj) nextConj rConj = (foldr recInstance nextConj (removePlusses qConj)) rConj
+                  where recInstance ct@(Appl _ []) nextRec rRec
+                          | null qDiff = (rRec, True)
+                          | otherwise  = nextRec rRec
+                        recInstance (Alias _ r) nextRec rRec = recInstance r nextRec rRec
+                        recInstance (AVar _ s) nextRec rRec = (foldr recInstance nextRec (computePatterns sig s S.empty)) rRec
+                        recInstance (Compl (AVar _ s) r) nextRec rRec = (foldr recInstance nextRec (computePatterns sig s (removePlusses r))) rRec
+                        recInstance (Appl f ts) nextRec rRec = (foldr checkf nextRec (computeQt ts qDiff)) rRec
+                          where checkf tqs nextAppl rAppl = case subInstance rAppl tqs of
+                                  (rf, False) -> nextAppl rf
+                                  _           -> (reach, True)
+                        subInstance rSub [] = (rSub, True)
+                        subInstance rSub ((ti, qi):tail) = case computeInstance rSub ti qi of
+                          (r', False) -> (r', False)
+                          _           -> subInstance rSub tail
 
 
 computeQt :: [Term] -> [Term] -> [[(Term, [Term])]]
@@ -586,6 +590,46 @@ computeQt ts qs = foldr getDist [zip ts (repeat [])] qs
   where getDist q tQ = concatMap distribute tQ
           where distribute [] = []
                 distribute ((t,xl):ql) = ((t, q:xl):ql):(map ((t,xl):) (distribute ql))
+
+-- powerConj :: Signature -> Term -> [([Term], Term)] -> [([Term], Term)]
+-- powerConj sig q l0 = foldr accuConj (map distribute l0) l0
+--   where accuConj (ql, t) l
+--           | isBottom txq = l
+--           | otherwise    = (ql, txq):l
+--           where txq = conjunction sig t q
+--         distribute (ql, t) = (q:ql, t)
+
+powerConj :: Signature -> Term -> [([Term], Term)] -> [([Term], Term)]
+powerConj _ q [] = [([q], q)]
+powerConj sig q l0 = foldr accuConj l0 l0
+  where accuConj (ql, t) l
+          | isBottom txq = l
+          | otherwise    = (q:ql, txq):l
+          where txq = conjunction sig t q
+
+selectPConj :: Signature -> Term -> [Term] -> [([Term], Term)] -> [([Term], Term)]
+selectPConj sig t q0 pQ = foldr accuSelect [(q0, t)] pQ
+  where checkDiff [] l = Just l
+        checkDiff _ [] = Nothing
+        checkDiff (q1:l1) (q2:l2)
+          | q1 == q2  = checkDiff l1 l2
+          | otherwise = fmap (q2:) (checkDiff (q1:l1) l2)
+        accuSelect (ql, q) l = case checkDiff ql q0 of
+          Nothing    -> l
+          Just qDiff -> if isBottom txq then l else (qDiff, txq):l
+          where txq = conjunction sig t q
+
+computePatterns :: Signature -> AType -> S.Set Term -> [Term]
+computePatterns sig (AType s p) rSet = concatMap buildPatterns (ctorsOfRange sig s)
+  where prSet = S.union rSet (removePlusses p)
+        buildPatterns f =  mapMaybe buildCompl (computeQc sig f prSet)
+          where buildCompl qs
+                  | any isBottom xqs = Nothing
+                  | otherwise = Just (Appl f xqs)
+                  where xqs = zipWith (complementR sig) xs (map sumTerm qs)
+                xs = map buildVar (domain sig f)
+                buildVar si = AVar NoName (AType si p)
+
 
 
 
