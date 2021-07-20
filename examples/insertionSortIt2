@@ -19,8 +19,7 @@ ite : Bool [- true()] * List * List [- cons(B(), cons(A(), l))] -> List [- cons(
     | Bool [- false()] * List [- cons(B(), cons(A(), l))] * List -> List [- cons(B(), cons(A(), l))] 
 //    | Bool * List [- cons(B(), cons(A(), l))] * List [- cons(B(), cons(A(), l))] -> List [- cons(B(), cons(A(), l))] 
 
-insert : Value [- A()] * List [- cons(B(), cons(A(), l))] -> List [- cons(B(), cons(A(), l))]
-       | Value [- B()] * List [- cons(B(), cons(A(), l))] -> List [- cons(B(), cons(A(), l))]
+insert : Value * List [- cons(B(), cons(A(), l))] -> List [- cons(B(), cons(A(), l))]
 
 sort : List -> List [- cons(B(), cons(A(), l))] 
 
