@@ -10,7 +10,7 @@ import qualified Data.Set as S
 
 import AlgoUtils ( isBottom, plus, removePlusses )
 import Datatypes
-import FreeCheckNL ( checkPfreeNL, CheckMap(..), getCheckMap, isBotMap )
+import FreeCheckNL ( checkPfreeNL )
 import Signature
 import Reach ( getReachable )
 import ReducePattern ( conjunction, normalizeSig, replaceVariables )
@@ -124,6 +124,49 @@ check sig p t = trace ("checking if BOTTOM: " ++ show t ++ " X " ++ show p) (che
         checkConj t = all (isBotMap . (getCheckMap sig (VarMap M.empty))) (removePlusses t)
 -- check sig t (Plus p1 p2) = (check sig t p1) && (check sig t p2)
 
+
+------------------------------ check Variables: -------------------------------
+
+
+data CheckMap = VarMap (M.Map VarName Term)
+              | BotMap
+
+
+isBotMap :: CheckMap -> Bool
+isBotMap BotMap = True
+isBotMap (VarMap vMap) = any isBottom vMap
+
+
+checkGlue :: Signature -> Term -> Term -> Term
+checkGlue _ Bottom _ = Bottom
+checkGlue _ _ Bottom = Bottom
+checkGlue sig (AVar _ _) t2 = t2
+checkGlue sig t1 (AVar _ _) = t1
+checkGlue sig t1 t2 = conjunction sig t1 t2
+
+-- checkInsert :: Signature -> VarName -> Term -> CheckMap -> CheckMap
+-- checkInsert _ _ _ BotMap = BotMap
+-- checkInsert sig x t@(AVar _ _) (VarMap vMap) = VarMap (M.insertWith (\u _ -> u) x t vMap)
+-- checkInsert sig x t (VarMap vMap) = case M.lookup x vMap of
+--   Nothing -> VarMap (M.insert x t vMap)
+--   Just u  -> case conjunction sig t u of
+--                Bottom -> BotMap
+--                txu    -> VarMap (M.insert x txu vMap)
+
+getCheckMap :: Signature -> CheckMap -> Term -> CheckMap
+getCheckMap _ BotMap _ = BotMap
+getCheckMap _ cMap (AVar NoName _) = cMap
+getCheckMap _ cMap (Compl (AVar NoName _) _) = cMap
+getCheckMap sig cMap (Appl f ts) = foldl (getCheckMap sig) cMap ts
+getCheckMap sig (VarMap vMap) t = VarMap m
+  where m = case t of
+              AVar x _             -> M.insertWith (checkGlue sig) x t vMap
+              Alias x u            -> M.insertWith (checkGlue sig) x u vMap
+-- getCheckMap sig cMap v@(AVar x _) = checkInsert sig x (v, []) cMap
+-- getCheckMap sig cMap (Alias x u) = checkInsert sig x (u, []) cMap
+
+
+------------------------------------------------------------------------------
 
 
 data Cache = Cache (M.Map (Term, Term) [Term])

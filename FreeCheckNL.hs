@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module FreeCheckNL ( checkTRSnl, checkPfreeNL,
-                     CheckMap(..), getCheckMap, isBotMap ) where
+module FreeCheckNL ( checkTRSnl, checkPfreeNL ) where
 
 import Debug.Trace
 
@@ -111,7 +110,7 @@ checkPfree sig c0 (t0, p0) = trace ("checking " ++ show p0 ++ "-free: " ++ show 
         recCheck c v@(AVar x _) pl cMap fSet = nextF fSet (checkInsert sig x (v, pl) (c, cMap))
         recCheck c (Alias x t) pl cMap fSet = nextF fSet (checkInsert sig x (t, pl) (c, cMap))
         recCheck c t@(Appl f ts) pl cMap@(VarMap vMap) fSet = (foldr check (\cRec -> (cRec, BotMap)) (removePlusses tm)) c'
-          where check ti f cc = case checkNextF fSet' (buildCheckMap sig (cc, cMap) ti) of
+          where check ti f cc = case checkNextF fSet' (getCheckMap sig (cc, cMap) ti) of
                   (cr, BotMap) -> f cr
                   (cr, r)      -> (cr, r)
                 (fSet', ts') = foldr accuConvert (fSet, []) ts
@@ -192,153 +191,156 @@ checkInsert sig x (t0, q0) (c, VarMap vMap) = case getInstance sig c t' q' of
                      Nothing -> (t0, q0)
                      Just (t, q) -> (conjunction sig t0 t, q++q0)
 
-buildCheckMap :: Signature -> (Cache, CheckMap) -> Term -> (Cache, CheckMap)
-buildCheckMap _ r@(_, BotMap) _ = r
-buildCheckMap _ r (AVar NoName _) = r
-buildCheckMap _ r (Compl (AVar NoName _) _) = r
-buildCheckMap sig r (Appl f ts) = foldl (buildCheckMap sig) r ts
-buildCheckMap sig r v@(AVar x _) = checkInsert sig x (v, []) r
-buildCheckMap sig r (Alias x u) = checkInsert sig x (u, []) r
-buildCheckMap sig r (Compl (Alias x u) q) = checkInsert sig x (u, collect q) r
-buildCheckMap sig r (Compl v@(AVar x _) q) = checkInsert sig x (v, collect q) r
+getCheckMap :: Signature -> (Cache, CheckMap) -> Term -> (Cache, CheckMap)
+getCheckMap _ r@(_, BotMap) _ = r
+getCheckMap _ r (AVar NoName _) = r
+getCheckMap _ r (Compl (AVar NoName _) _) = r
+getCheckMap sig r (Appl f ts) = foldl (getCheckMap sig) r ts
+getCheckMap sig r v@(AVar x _) = checkInsert sig x (v, []) r
+getCheckMap sig r (Alias x u) = checkInsert sig x (u, []) r
+getCheckMap sig r (Compl (Alias x u) q) = checkInsert sig x (u, collect q) r
+getCheckMap sig r (Compl v@(AVar x _) q) = checkInsert sig x (v, collect q) r
 
 
 
 --------------------------------- no cache ------------------------------------
 
 
-complementA :: Signature -> Term -> Term -> Term
-complementA sig p1 p2 = p1 \\ p2
-  where
-    u \\ (AVar _ (AType _ Bottom)) = Bottom                               --M1
-    u \\ Bottom = u                                                       --M2
-    Plus q1 q2 \\ p = plus (q1 \\ p) (q2 \\ p)                            --M3
---    (Var x) \\ p@(Appl g ps) = alias x (sum [pattern f \\ p | f <- fs])
---      where fs = ctorsOfSameRange sig g
---            pattern f = Appl f (replicate (arity sig f) (Var "_"))
-    Bottom \\ u = Bottom                                                  --M5
-    p@(Appl _ _) \\ (Plus p1 p2) = (p \\ p1) \\ p2                        --M6
-    Appl f ps \\ Appl g qs
-        | f /= g || someUnchanged = appl f ps                             --M8
-        | otherwise = sumTerm [appl f ps' | ps' <- interleave ps pqs]     --M7
-      where pqs = zipWith (\\) ps qs
-            someUnchanged = or (zipWith (==) ps pqs)
-    u@(Appl f ts) \\ (AVar _ (AType _ q)) = plus match subMatch           --C1
-      where match = conjunction sig u q
-            subMatch = sumTerm [appl f ps | ps <- interleave ts tqs]
-            tqs = zipWith (\\) ts (map buildVar (domain sig f))
-            buildVar s = AVar NoName (AType s q)
-    (Compl v t) \\ u = v \\ (plus t u)                                    --C2
-    v@(AVar x sp) \\ t
-        | checkInstance sig v ql = Compl v t --Alias x (Compl (AVar NoName sp) t)
-        | otherwise              = Bottom                                 --C3
-        where ql = collect t
-    a@(Alias x p) \\ t
-        | checkInstance sig p ql = Compl (Alias x p) t
-        | otherwise              = Bottom                                 --C3'
-        where ql = collect t
---    p1 \\ Alias x p2 = p1 \\ p2
-
-
--- check that a term is p-free
--- parameters: Signature, Pattern p (should be a sum of constructor patterns), Rhs term of a rule (should be a qsymb)
--- return a list of terms that do not satisfy the expected pattern-free property
 checkPfreeNL :: Signature -> (Term, Term) -> Bool
-checkPfreeNL _ (_, Bottom) = True
-checkPfreeNL sig (t0, p0) = trace ("checking " ++ show p0 ++ "-free: " ++ show t0) (recCheck t0 [p0] (VarMap M.empty) S.empty)
-  where convert fSet x@(AVar _ _)  = (fSet, x)
-        convert fSet a@(Alias _ _) = (fSet, a)
-        convert fSet u@(Compl _ _) = (fSet, u)
-        convert fSet u@(Appl f us)
-          | isFunc sig f = (S.insert u fSet, v)
-          | otherwise    = (fSet', Appl f vs)
-          where (fSet', vs) = foldr accuConvert (fSet, []) us
-                v = AVar (VarName (show u)) (AType (range sig f) Bottom)
-        accuConvert ti (mi, tl) = (mi', ti':tl)
-          where (mi', ti') = convert mi ti
-        recCheck _ _ BotMap _ = True
-        recCheck v@(AVar x _) pl cMap fSet = nextF fSet (checkVar sig x (v, pl) cMap)
-        recCheck (Alias x t) pl cMap fSet = nextF fSet (checkVar sig x (t, pl) cMap)
-        recCheck t@(Appl f ts) pl cMap@(VarMap vMap) fSet = all ((checkNextF fSet') . (getCheckMap sig cMap)) tmSet
-          where (fSet', ts') = foldr accuConvert (fSet, []) ts
-                tmSet = removePlusses (complementA sig (Appl f ts') (sumTerm cl))
-                  where cl | isFunc sig f = map ((Appl f) . (zipWith buildVar d)) profiles
-                           | otherwise    = zipWith (flip buildVar) pl (repeat s)
-                           where s = range sig f
-                                 d = domain sig f
-                                 buildVar si qi = AVar NoName (AType si qi)
-                                 profiles = selectProf sig f u pl'
-                                 (u, pl') = case M.lookup (VarName (show t)) vMap of
-                                   Just (v, ql) -> (v, pl++ql)
-                                   Nothing -> (AVar NoName (AType s Bottom), pl)
-        nextF _ BotMap = True
-        nextF fSet cMap = case S.maxView fSet of
-          Nothing          -> False
-          Just (tf, fSet') -> recCheck tf [] cMap fSet'
-        checkNextF fSet cMap
-          | isBotMap cMap = True
-          | otherwise     = case S.maxView fSet of
-                              Nothing          -> False
-                              Just (tf, fSet') -> recCheck tf [] cMap fSet'
+checkPfreeNL sig = isBottom . snd . (checkPfree sig emptyCache)
 
-selectProf :: Signature -> FunName -> Term -> [Term] -> [[Term]]
-selectProf sig f t ql = map fst (fst (getCombinations part))
-  where part = partition checkProfile (profile sig f)
-        getCombinations (okl, []) =  (okl, [])
-        getCombinations (okl, ((d,r):tail)) = (recokl, (d,r):reckol)
-          where (recokl, reckol) = case getCombinations (okl, tail) of
-                  (oktail, kotail) -> (oktail ++ okdist, kotail ++ kodist)
-                    where (okdist, kodist) = partition checkProfile (map sumProfile kotail)
-                sumProfile (d', r') = (zipWith plus d d', plus r r')
-        checkProfile (_, r) = all checkRange (removePlusses (conjunction sig t (AVar NoName (AType s r))))
-        checkRange u = not (checkInstance sig u ql)
-        s = range sig f
-
-
-checkGlue :: Signature -> (Term, [Term]) -> (Term, [Term]) -> (Term, [Term])
-checkGlue _ (Bottom, _) (_, _) = (Bottom, [])
-checkGlue _ (_, _) (Bottom, _) = (Bottom, [])
-checkGlue sig (AVar _ _, q1) (t2, q2)
-  | checkInstance sig t2 ql = (t2, ql)
-  | otherwise               = (Bottom, [])
-  where ql = q1 ++ q2
-checkGlue sig (t1, q1) (AVar _ _, q2)
-  | checkInstance sig t1 ql = (t1, ql)
-  | otherwise               = (Bottom, [])
-  where ql = q1 ++ q2
-checkGlue sig (t1, q1) (t2, q2)
-  | checkInstance sig txt ql = (txt, ql)
-  | otherwise                = (Bottom, [])
-  where txt = conjunction sig t1 t2
-        ql = q1 ++ q2
-
-checkVar :: Signature -> VarName -> (Term, [Term]) -> CheckMap -> CheckMap
-checkVar _ _ _ BotMap = BotMap
-checkVar sig x tq@(AVar _ _, q0) (VarMap vMap)
-  | checkInstance sig t' q' = VarMap vMap'
-  | otherwise               = BotMap
-  where ((t', q'), vMap') = case M.insertLookupWithKey glue x tq vMap of
-          (Nothing    , rMap) -> (tq, rMap)
-          (Just (t, q), rMap) -> ((t, q++q0), rMap)
-        glue _ _ (t, q) = (t, q++q0)
-checkVar sig x (t0, q0) (VarMap vMap)
-  | checkInstance sig t' q' = VarMap (M.insert x (t', q') vMap)
-  | otherwise               = BotMap
-  where (t', q') = case M.lookup x vMap of
-                     Nothing -> (t0, q0)
-                     Just (t, q) -> (conjunction sig t0 t, q++q0)
-
-getCheckMap :: Signature -> CheckMap -> Term -> CheckMap
-getCheckMap _ BotMap _ = BotMap
-getCheckMap _ cMap (AVar NoName _) = cMap
-getCheckMap _ cMap (Compl (AVar NoName _) _) = cMap
-getCheckMap sig cMap (Appl f ts) = foldl (getCheckMap sig) cMap ts
-getCheckMap sig (VarMap vMap) t = VarMap m
-  where m = case t of
-              AVar x _             -> M.insertWith (checkGlue sig) x (t, []) vMap
-              Alias x u            -> M.insertWith (checkGlue sig) x (u, []) vMap
-              Compl (Alias x u) q  -> M.insertWith (checkGlue sig) x (u, collect q) vMap
-              Compl v@(AVar x _) q -> M.insertWith (checkGlue sig) x (v, collect q) vMap
+-- complementA :: Signature -> Term -> Term -> Term
+-- complementA sig p1 p2 = p1 \\ p2
+--   where
+--     u \\ (AVar _ (AType _ Bottom)) = Bottom                               --M1
+--     u \\ Bottom = u                                                       --M2
+--     Plus q1 q2 \\ p = plus (q1 \\ p) (q2 \\ p)                            --M3
+-- --    (Var x) \\ p@(Appl g ps) = alias x (sum [pattern f \\ p | f <- fs])
+-- --      where fs = ctorsOfSameRange sig g
+-- --            pattern f = Appl f (replicate (arity sig f) (Var "_"))
+--     Bottom \\ u = Bottom                                                  --M5
+--     p@(Appl _ _) \\ (Plus p1 p2) = (p \\ p1) \\ p2                        --M6
+--     Appl f ps \\ Appl g qs
+--         | f /= g || someUnchanged = appl f ps                             --M8
+--         | otherwise = sumTerm [appl f ps' | ps' <- interleave ps pqs]     --M7
+--       where pqs = zipWith (\\) ps qs
+--             someUnchanged = or (zipWith (==) ps pqs)
+--     u@(Appl f ts) \\ (AVar _ (AType _ q)) = plus match subMatch           --C1
+--       where match = conjunction sig u q
+--             subMatch = sumTerm [appl f ps | ps <- interleave ts tqs]
+--             tqs = zipWith (\\) ts (map buildVar (domain sig f))
+--             buildVar s = AVar NoName (AType s q)
+--     (Compl v t) \\ u = v \\ (plus t u)                                    --C2
+--     v@(AVar x sp) \\ t
+--         | checkInstance sig v ql = Compl v t --Alias x (Compl (AVar NoName sp) t)
+--         | otherwise              = Bottom                                 --C3
+--         where ql = collect t
+--     a@(Alias x p) \\ t
+--         | checkInstance sig p ql = Compl (Alias x p) t
+--         | otherwise              = Bottom                                 --C3'
+--         where ql = collect t
+-- --    p1 \\ Alias x p2 = p1 \\ p2
+--
+--
+-- -- check that a term is p-free
+-- -- parameters: Signature, Pattern p (should be a sum of constructor patterns), Rhs term of a rule (should be a qsymb)
+-- -- return a list of terms that do not satisfy the expected pattern-free property
+-- checkPfreeNL :: Signature -> (Term, Term) -> Bool
+-- checkPfreeNL _ (_, Bottom) = True
+-- checkPfreeNL sig (t0, p0) = trace ("checking " ++ show p0 ++ "-free: " ++ show t0) (recCheck t0 [p0] (VarMap M.empty) S.empty)
+--   where convert fSet x@(AVar _ _)  = (fSet, x)
+--         convert fSet a@(Alias _ _) = (fSet, a)
+--         convert fSet u@(Compl _ _) = (fSet, u)
+--         convert fSet u@(Appl f us)
+--           | isFunc sig f = (S.insert u fSet, v)
+--           | otherwise    = (fSet', Appl f vs)
+--           where (fSet', vs) = foldr accuConvert (fSet, []) us
+--                 v = AVar (VarName (show u)) (AType (range sig f) Bottom)
+--         accuConvert ti (mi, tl) = (mi', ti':tl)
+--           where (mi', ti') = convert mi ti
+--         recCheck _ _ BotMap _ = True
+--         recCheck v@(AVar x _) pl cMap fSet = nextF fSet (checkVar sig x (v, pl) cMap)
+--         recCheck (Alias x t) pl cMap fSet = nextF fSet (checkVar sig x (t, pl) cMap)
+--         recCheck t@(Appl f ts) pl cMap@(VarMap vMap) fSet = all ((checkNextF fSet') . (getCheckMap sig cMap)) tmSet
+--           where (fSet', ts') = foldr accuConvert (fSet, []) ts
+--                 tmSet = removePlusses (complementA sig (Appl f ts') (sumTerm cl))
+--                   where cl | isFunc sig f = map ((Appl f) . (zipWith buildVar d)) profiles
+--                            | otherwise    = zipWith (flip buildVar) pl (repeat s)
+--                            where s = range sig f
+--                                  d = domain sig f
+--                                  buildVar si qi = AVar NoName (AType si qi)
+--                                  profiles = selectProf sig f u pl'
+--                                  (u, pl') = case M.lookup (VarName (show t)) vMap of
+--                                    Just (v, ql) -> (v, pl++ql)
+--                                    Nothing -> (AVar NoName (AType s Bottom), pl)
+--         nextF _ BotMap = True
+--         nextF fSet cMap = case S.maxView fSet of
+--           Nothing          -> False
+--           Just (tf, fSet') -> recCheck tf [] cMap fSet'
+--         checkNextF fSet cMap
+--           | isBotMap cMap = True
+--           | otherwise     = case S.maxView fSet of
+--                               Nothing          -> False
+--                               Just (tf, fSet') -> recCheck tf [] cMap fSet'
+--
+-- selectProf :: Signature -> FunName -> Term -> [Term] -> [[Term]]
+-- selectProf sig f t ql = map fst (fst (getCombinations part))
+--   where part = partition checkProfile (profile sig f)
+--         getCombinations (okl, []) =  (okl, [])
+--         getCombinations (okl, ((d,r):tail)) = (recokl, (d,r):reckol)
+--           where (recokl, reckol) = case getCombinations (okl, tail) of
+--                   (oktail, kotail) -> (oktail ++ okdist, kotail ++ kodist)
+--                     where (okdist, kodist) = partition checkProfile (map sumProfile kotail)
+--                 sumProfile (d', r') = (zipWith plus d d', plus r r')
+--         checkProfile (_, r) = all checkRange (removePlusses (conjunction sig t (AVar NoName (AType s r))))
+--         checkRange u = not (checkInstance sig u ql)
+--         s = range sig f
+--
+--
+-- checkGlue :: Signature -> (Term, [Term]) -> (Term, [Term]) -> (Term, [Term])
+-- checkGlue _ (Bottom, _) (_, _) = (Bottom, [])
+-- checkGlue _ (_, _) (Bottom, _) = (Bottom, [])
+-- checkGlue sig (AVar _ _, q1) (t2, q2)
+--   | checkInstance sig t2 ql = (t2, ql)
+--   | otherwise               = (Bottom, [])
+--   where ql = q1 ++ q2
+-- checkGlue sig (t1, q1) (AVar _ _, q2)
+--   | checkInstance sig t1 ql = (t1, ql)
+--   | otherwise               = (Bottom, [])
+--   where ql = q1 ++ q2
+-- checkGlue sig (t1, q1) (t2, q2)
+--   | checkInstance sig txt ql = (txt, ql)
+--   | otherwise                = (Bottom, [])
+--   where txt = conjunction sig t1 t2
+--         ql = q1 ++ q2
+--
+-- checkVar :: Signature -> VarName -> (Term, [Term]) -> CheckMap -> CheckMap
+-- checkVar _ _ _ BotMap = BotMap
+-- checkVar sig x tq@(AVar _ _, q0) (VarMap vMap)
+--   | checkInstance sig t' q' = VarMap vMap'
+--   | otherwise               = BotMap
+--   where ((t', q'), vMap') = case M.insertLookupWithKey glue x tq vMap of
+--           (Nothing    , rMap) -> (tq, rMap)
+--           (Just (t, q), rMap) -> ((t, q++q0), rMap)
+--         glue _ _ (t, q) = (t, q++q0)
+-- checkVar sig x (t0, q0) (VarMap vMap)
+--   | checkInstance sig t' q' = VarMap (M.insert x (t', q') vMap)
+--   | otherwise               = BotMap
+--   where (t', q') = case M.lookup x vMap of
+--                      Nothing -> (t0, q0)
+--                      Just (t, q) -> (conjunction sig t0 t, q++q0)
+--
+-- getCheckMap :: Signature -> CheckMap -> Term -> CheckMap
+-- getCheckMap _ BotMap _ = BotMap
+-- getCheckMap _ cMap (AVar NoName _) = cMap
+-- getCheckMap _ cMap (Compl (AVar NoName _) _) = cMap
+-- getCheckMap sig cMap (Appl f ts) = foldl (getCheckMap sig) cMap ts
+-- getCheckMap sig (VarMap vMap) t = VarMap m
+--   where m = case t of
+--               AVar x _             -> M.insertWith (checkGlue sig) x (t, []) vMap
+--               Alias x u            -> M.insertWith (checkGlue sig) x (u, []) vMap
+--               Compl (Alias x u) q  -> M.insertWith (checkGlue sig) x (u, collect q) vMap
+--               Compl v@(AVar x _) q -> M.insertWith (checkGlue sig) x (v, collect q) vMap
 
 
 
