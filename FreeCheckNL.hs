@@ -83,7 +83,7 @@ checkRule sig c0 r@(Rule (Appl f _) _) = foldl accuCheck (c0, M.empty) rules
   where accuCheck (c, m) (Rule lhs rhs, p)
           | isBottom ct = (c', m)
           | otherwise   = (c', M.insert (Rule lhs rhs) (p, ct) m)
-          where (c', ct) = checkPfree sig c (rhs, p)
+          where (c', ct) = trace ("checking RULE " ++ show (Rule lhs rhs)) (checkPfree sig c (rhs, p))
         rules = concatMap buildRule (map buildDomain (profile sig f))
         buildRule (_, Bottom) = []
         buildRule (ad, p) = zip (replaceVariables sig r ad) (repeat p)
@@ -95,7 +95,7 @@ checkRule sig c0 r@(Rule (Appl f _) _) = foldl accuCheck (c0, M.empty) rules
 -- return Bottom if true, a counter-example otherwise
 checkPfree :: Signature -> Cache -> (Term, Term) -> (Cache, Term)
 checkPfree _ c0 (t0, Bottom) = (c0, t0)
-checkPfree sig c0 (t0, p0) = instantiate sig checkMap t0
+checkPfree sig c0 (t0, p0) = trace ("checking " ++ show p0 ++ "-free: " ++ show t0) (instantiate sig checkMap t0)
   where checkMap = recCheck c0 t0 [p0] (VarMap M.empty) S.empty
         convert fSet x@(AVar _ _)  = (fSet, x)
         convert fSet a@(Alias _ _) = (fSet, a)
