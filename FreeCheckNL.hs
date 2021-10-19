@@ -2,9 +2,13 @@
 
 module FreeCheckNL ( checkTRSnl, checkPfreeNL ) where
 
+import Control.Arrow ( left )
+import Control.Monad ( foldM )
+
 import Debug.Trace
 
 import Data.List ( isSubsequenceOf, partition )
+import Data.Either
 import Data.Maybe
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -82,7 +86,7 @@ checkRule sig c0 r@(Rule (Appl f _) _) = foldl accuCheck (c0, M.empty) rules
   where accuCheck (c, m) (Rule lhs rhs, p)
           | isBottom ct = (c', m)
           | otherwise   = (c', M.insert (Rule lhs rhs) (p, ct) m)
-          where (c', ct) = trace ("checking RULE " ++ show (Rule lhs rhs)) (checkPfree sig c (rhs, p))
+          where (c', ct) = trace ("checking RULE " ++ show (Rule lhs rhs)) $ checkPfree sig c (rhs, p)
         rules = concatMap buildRule (map buildDomain (profile sig f))
         buildRule (_, Bottom) = []
         buildRule (ad, p) = zip (replaceVariables sig r ad) (repeat p)
@@ -94,8 +98,8 @@ checkRule sig c0 r@(Rule (Appl f _) _) = foldl accuCheck (c0, M.empty) rules
 -- return Bottom if true, a counter-example otherwise
 checkPfree :: Signature -> Cache -> (Term, Term) -> (Cache, Term)
 checkPfree _ c0 (t0, Bottom) = (c0, t0)
-checkPfree sig c0 (t0, p0) = trace ("checking " ++ show p0 ++ "-free: " ++ show t0) (instantiate sig checkMap t0)
-  where checkMap = recCheck c0 t0 [p0] (VarMap M.empty) S.empty
+checkPfree sig c0 (t0, p0) = trace ("checking " ++ show p0 ++ "-free: " ++ show t0) $ instantiate sig checkMap t0
+  where checkMap = either id (\c -> (c, BotMap)) $ recCheck c0 t0 [p0] (VarMap M.empty) S.empty
         convert fSet x@(AVar _ _)  = (fSet, x)
         convert fSet a@(Alias _ _) = (fSet, a)
         convert fSet u@(Compl _ _) = (fSet, u)
@@ -106,13 +110,11 @@ checkPfree sig c0 (t0, p0) = trace ("checking " ++ show p0 ++ "-free: " ++ show 
                 v = AVar (VarName (show u)) (AType (range sig f) Bottom)
         accuConvert ti (mi, tl) = (mi', ti':tl)
           where (mi', ti') = convert mi ti
-        recCheck c _ _ BotMap _ = (c, BotMap)
+        recCheck c _ _ BotMap _ = Right c
         recCheck c v@(AVar x _) pl cMap fSet = nextF fSet (checkInsert sig x (v, pl) (c, cMap))
         recCheck c (Alias x t) pl cMap fSet = nextF fSet (checkInsert sig x (t, pl) (c, cMap))
-        recCheck c t@(Appl f ts) pl cMap@(VarMap vMap) fSet = (foldr check (\cRec -> (cRec, BotMap)) (removePlusses tm)) c'
-          where check ti f cc = case checkNextF fSet' (getCheckMap sig (cc, cMap) ti) of
-                  (cr, BotMap) -> f cr
-                  (cr, r)      -> (cr, r)
+        recCheck c t@(Appl f ts) pl cMap@(VarMap vMap) fSet = foldM check c' (removePlusses tm)
+          where check cc ti = nextF fSet' $ getCheckMap sig ti (cc, cMap)
                 (fSet', ts') = foldr accuConvert (fSet, []) ts
                 (c', tm) = complementC sig cq (Appl f ts') (sumTerm ql)
                   where (cq, ql)
@@ -125,15 +127,10 @@ checkPfree sig c0 (t0, p0) = trace ("checking " ++ show p0 ++ "-free: " ++ show 
                                 (u, pl') = case M.lookup (VarName (show t)) vMap of
                                   Just (v, ql) -> (v, pl++ql)
                                   Nothing -> (AVar NoName (AType s Bottom), pl)
-        nextF _ (c, BotMap) = (c, BotMap)
+        nextF _ (c, BotMap) = Right c
         nextF fSet (c, cMap) = case S.maxView fSet of
-          Nothing          -> (c, cMap)
+          Nothing          -> Left (c, cMap)
           Just (tf, fSet') -> recCheck c tf [] cMap fSet'
-        checkNextF fSet (c, cMap)
-          | isBotMap cMap = (c, cMap)
-          | otherwise     = case S.maxView fSet of
-                              Nothing          -> (c, cMap)
-                              Just (tf, fSet') -> recCheck c tf [] cMap fSet'
 
 selectProfiles :: Signature -> Cache -> FunName -> Term -> [Term] -> (Cache, [[Term]])
 selectProfiles sig c0 f t ql = (cf, map fst oks)
@@ -145,13 +142,13 @@ selectProfiles sig c0 f t ql = (cf, map fst oks)
                     where (cDist, (okdist, kodist)) = partition cRec (map sumProfile kotail)
                 sumProfile (d', r') = (zipWith plus d d', plus r r')
         partition c = foldr checkProfile (c, ([], []))
-        checkProfile p@(_, r) (c, (okl, kol)) = case (foldr accuCheck (\ca -> (ca, False)) tmSet) c of
-          (c', True)  -> (c', (okl, p:kol))
-          (c', False) -> (c', (p:okl, kol))
+        checkProfile p@(_, r) (c, (okl, kol)) = case foldM accuCheck c tmSet of
+          Left c'  -> (c', (okl, p:kol)) -- profile rejected
+          Right c' -> (c', (p:okl, kol)) -- profile accepted
           where tmSet = removePlusses (conjunction sig t (AVar NoName (AType s r)))
-        accuCheck u f c = case getInstance sig c u ql of
-          (c', Bottom) -> f c'
-          (c', _)      -> (c', True)
+        accuCheck c u = case getInstance sig c u ql of
+          (c', Bottom) -> Right c'
+          (c', _)      -> Left c' -- profile rejected, stop computation
         s = range sig f
 
 
@@ -161,10 +158,6 @@ selectProfiles sig c0 f t ql = (cf, map fst oks)
 data CheckMap = VarMap (M.Map VarName (Term, [Term]))
               | BotMap
 
-
-isBotMap :: CheckMap -> Bool
-isBotMap BotMap = True
-isBotMap (VarMap vMap) = any (isBottom.fst) vMap
 
 instantiate :: Signature -> (Cache, CheckMap) -> Term -> (Cache, Term)
 instantiate _ (c, BotMap) _ = (c, Bottom)
@@ -191,15 +184,15 @@ checkInsert sig x (t0, q0) (c, VarMap vMap) = case getInstance sig c t' q' of
                      Nothing -> (t0, q0)
                      Just (t, q) -> (conjunction sig t0 t, q++q0)
 
-getCheckMap :: Signature -> (Cache, CheckMap) -> Term -> (Cache, CheckMap)
-getCheckMap _ r@(_, BotMap) _ = r
-getCheckMap _ r (AVar NoName _) = r
-getCheckMap _ r (Compl (AVar NoName _) _) = r
-getCheckMap sig r (Appl f ts) = foldl (getCheckMap sig) r ts
-getCheckMap sig r v@(AVar x _) = checkInsert sig x (v, []) r
-getCheckMap sig r (Alias x u) = checkInsert sig x (u, []) r
-getCheckMap sig r (Compl (Alias x u) q) = checkInsert sig x (u, collect q) r
-getCheckMap sig r (Compl v@(AVar x _) q) = checkInsert sig x (v, collect q) r
+getCheckMap :: Signature -> Term -> (Cache, CheckMap) -> (Cache, CheckMap)
+getCheckMap _ _ r@(_, BotMap) = r
+getCheckMap _ (AVar NoName _) r = r
+getCheckMap _ (Compl (AVar NoName _) _) r = r
+getCheckMap sig (Appl f ts) r = foldr (getCheckMap sig) r ts
+getCheckMap sig v@(AVar x _) r = checkInsert sig x (v, []) r
+getCheckMap sig (Alias x u) r = checkInsert sig x (u, []) r
+getCheckMap sig (Compl (Alias x u) q) r = checkInsert sig x (u, collect q) r
+getCheckMap sig (Compl v@(AVar x _) q) r = checkInsert sig x (v, collect q) r
 
 
 
@@ -356,32 +349,29 @@ checkInstance :: Signature -> Term -> [Term] -> Bool
 checkInstance _ Bottom _ = False
 checkInstance sig t0 q0
   | any isBottom q0 = False
-  | otherwise       = snd (computeInstance M.empty t0 q0)
+  | otherwise       = isNothing (computeInstance M.empty t0 q0)
   where powerQ0 = foldr (powerConj sig) [] q0
-        computeInstance reach Bottom _ = (reach, False)
-        computeInstance reach t [] = (reach, True)
+        computeInstance reach Bottom _ = Just reach
+        computeInstance reach t [] = Nothing
         computeInstance reach t q = case M.lookup t' reach of
-          Nothing -> (foldr conjInstance (\rConj -> (rConj, False)) powerQ) subReach
-          Just q' | isSubsequenceOf q' q -> (reach, False)
-                  | otherwise            -> (foldr conjInstance (\rConj -> (rConj, False)) powerQ) subReach
+          Nothing -> foldM conjInstance subReach powerQ
+          Just q' | isSubsequenceOf q' q -> Just reach
+                  | otherwise            -> foldM conjInstance subReach powerQ
           where t' = linearize t
                 powerQ = selectPConj sig t' q powerQ0
                 subReach = M.insert t' q reach
-                conjInstance (qDiff, qConj) nextConj rConj = (foldr recInstance nextConj (removePlusses qConj)) rConj
-                  where recInstance ct@(Appl _ []) nextRec rRec
-                          | null qDiff = (rRec, True)
-                          | otherwise  = nextRec rRec
-                        recInstance (Alias _ r) nextRec rRec = recInstance r nextRec rRec
-                        recInstance (AVar _ s) nextRec rRec = (foldr recInstance nextRec (computePatterns sig s S.empty)) rRec
-                        recInstance (Compl (AVar _ s) r) nextRec rRec = (foldr recInstance nextRec (computePatterns sig s (removePlusses r))) rRec
-                        recInstance (Appl f ts) nextRec rRec = (foldr checkf nextRec (computeQt ts qDiff)) rRec
-                          where checkf tqs nextAppl rAppl = case subInstance rAppl tqs of
-                                  (rf, False) -> nextAppl rf
-                                  _           -> (reach, True)
-                        subInstance rSub [] = (rSub, True)
+                conjInstance rConj (qDiff, qConj) = foldM recInstance rConj (removePlusses qConj)
+                  where recInstance rRec ct@(Appl _ [])
+                          | null qDiff = Nothing
+                          | otherwise  = Just rRec
+                        recInstance rRec (Alias _ r) = recInstance rRec r
+                        recInstance rRec (AVar _ s) = foldM recInstance rRec (computePatterns sig s S.empty)
+                        recInstance rRec (Compl (AVar _ s) r) = foldM recInstance rRec (computePatterns sig s (removePlusses r))
+                        recInstance rRec (Appl f ts) = foldM subInstance rRec (computeQt ts qDiff)
+                        subInstance rSub [] = Nothing -- found instance
                         subInstance rSub ((ti, qi):tail) = case computeInstance rSub ti qi of
-                          (r', False) -> (r', False)
-                          _           -> subInstance rSub tail
+                          Nothing -> subInstance rSub tail
+                          just    -> just -- no instance found for ti and qi
 
 
 
@@ -399,36 +389,32 @@ getInstance sig c@(Cache m) t q
 -- get an instance of a linear pattern t0 that is not p-free
 -- for all p in q0, return Bottom if no such instance exists
 getInst :: Signature -> Term -> [Term] -> Term
-getInst sig t0 q0 = snd (computeInstance M.empty t0 q0)
+getInst sig t0 q0 = case computeInstance M.empty t0 q0 of
+  Left res -> res
+  _        -> Bottom
   where powerQ0 = foldr (powerConj sig) [] q0
-        computeInstance reach Bottom _ = (reach, Bottom)
-        computeInstance reach t [] = (reach, t)
+        computeInstance reach Bottom _ = Right reach
+        computeInstance reach t [] = Left t
         computeInstance reach t q = case M.lookup t' reach of
-          Nothing -> (foldr getConjInstance (\rConj -> (rConj, Bottom)) powerQ) subReach
-          Just q' | isSubsequenceOf q' q -> (reach, Bottom)
-                  | otherwise            -> (foldr getConjInstance (\rConj -> (rConj, Bottom)) powerQ) subReach
+          Nothing -> foldM getConjInstance subReach powerQ
+          Just q' | isSubsequenceOf q' q -> Right reach
+                  | otherwise            -> foldM getConjInstance subReach powerQ
           where t' = linearize t
                 powerQ = selectPConj sig t' q powerQ0
                 subReach = M.insert t' q reach
-                getConjInstance (qDiff, qConj) fConj rConj = (foldr getRecInstance fConj (removePlusses qConj)) rConj
-                  where getRecInstance ct@(Appl _ []) fRec rRec
-                          | null qDiff = (rRec, ct)
-                          | otherwise  = fRec rRec
-                        getRecInstance (Alias _ r) fRec rRec = getRecInstance r fRec rRec
-                        getRecInstance (AVar _ s) fRec rRec = (foldr getRecInstance fRec (computePatterns sig s S.empty)) rRec
-                        getRecInstance (Compl (AVar _ s) r) fRec rRec = (foldr getRecInstance fRec (computePatterns sig s (removePlusses r))) rRec
-                        getRecInstance (Appl f ts) fRec rRec = (foldr buildf fRec (computeQt ts qDiff)) rRec
-                          where buildf tqs fAppl rAppl = case getSubInstance rAppl tqs of
-                                  (rf, [])  -> fAppl rf
-                                  (_, sub) -> (reach, Appl f sub)
-                        getSubInstance rSub ((ti, qi):[]) = case computeInstance rSub ti qi of
-                          (r', Bottom) -> (r', [])
-                          (_, vi)      -> (rSub, [vi])
+                getConjInstance rConj (qDiff, qConj) = foldM getRecInstance rConj (removePlusses qConj)
+                  where getRecInstance rRec ct@(Appl _ [])
+                          | null qDiff = Left ct
+                          | otherwise  = Right rRec
+                        getRecInstance rRec (Alias _ r) = getRecInstance rRec r
+                        getRecInstance rRec (AVar _ s) = foldM getRecInstance rRec (computePatterns sig s S.empty)
+                        getRecInstance rRec (Compl (AVar _ s) r) = foldM getRecInstance rRec (computePatterns sig s (removePlusses r))
+                        getRecInstance rRec (Appl f ts) = foldM buildf rRec (computeQt ts qDiff)
+                          where buildf rAppl tqs = left (Appl f) (getSubInstance rAppl tqs)
+                        getSubInstance rSub ((ti, qi):[]) = left (\vi -> [vi]) (computeInstance rSub ti qi)
                         getSubInstance rSub ((ti, qi):tail) = case computeInstance rSub ti qi of
-                          (r', Bottom) -> (r', [])
-                          (_, vi)      -> case getSubInstance rSub tail of
-                                            (r', [])   -> (r', [])
-                                            (_, vTail) -> (rSub, vi:vTail)
+                          Right r' -> Right r'
+                          Left vi  -> left (vi:) (getSubInstance rSub tail)
 
 
 

@@ -112,11 +112,7 @@ normalizeSig sig@(Signature ctors funs) = Signature ctors tFuns
                 reduce v@(AVar _ _) = v
                 reduce (Plus u1 u2) = Plus (reduce u1) (reduce u2)
                 reduce (Compl u v) = complement sig (reduce u) (reduce v)
-                reduce (Appl g tl) = foldl buildTerm Bottom subterms
-                  where subterms = foldl buildSet (S.singleton []) (reverse tl)
-                        buildSet sl t = S.fold (S.union . (buildList t)) S.empty sl
-                        buildList t l = S.map (:l) ((removePlusses.reduce) t)
-                        buildTerm u l = plus u (Appl g l)
+                reduce (Appl g tl) = sumTerm $ removePlusses (Appl g (map reduce tl))
                 typeP (p,s) = p # s
                   where
                     Bottom # _ = Bottom

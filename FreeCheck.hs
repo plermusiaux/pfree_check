@@ -4,6 +4,8 @@ module FreeCheck (checkTRS) where
 
 import Debug.Trace
 
+import Control.Monad ( foldM, liftM )
+import Data.Either
 import Data.Maybe
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -26,13 +28,12 @@ buildEqui sig c0 t@(Appl f ts)
         buildSub t (cache, l) = (cache', t':l)
           where (cache', t') = buildEqui sig cache t
         (c2, p) = foldl accuCheck (c1, Bottom) (profile sig f)
-        accuCheck (cache, p) (qs, q)
-          | subFree   = (cache', plus p q)
-          | otherwise = (cache', p)
-          where (cache', subFree) = (foldr subCheck (\c -> (c, True)) (zip equis qs)) cache
-        subCheck tp next cache
-          | null fails = next cache'
-          | otherwise = (cache', False)
+        accuCheck (cache, p) (qs, q) = case foldM subCheck cache (zip equis qs) of
+          Right cache' -> (cache', plus p q)
+          Left cache'  -> (cache', p)
+        subCheck cache tp
+          | null fails = Right cache' -- t is p-free
+          | otherwise  = Left cache'  -- t is not p-free, stop subCheck computation
           where (cache', fails) = checkPfree sig cache tp
 buildEqui _ c t = (c, t)
 
@@ -80,10 +81,7 @@ isFLinear sig t0 = isJust (getOKVar t0)
           | (isFunc sig f) && not (checkInter vts) = Nothing
           | otherwise                              = uVar
           where vts = map getOKVar ts
-                uVar = foldr checkUnion (Just S.empty) vts
-                checkUnion Nothing _ = Nothing
-                checkUnion _ Nothing = Nothing
-                checkUnion (Just a) (Just b) = Just (S.union a b)
+                uVar = foldM (liftM . S.union) S.empty vts
                 checkInter [] = True
                 checkInter (h:tail) = case h of
                   Nothing  -> False
