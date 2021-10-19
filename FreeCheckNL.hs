@@ -368,10 +368,12 @@ checkInstance sig t0 q0
                         recInstance rRec (AVar _ s) = foldM recInstance rRec (computePatterns sig s S.empty)
                         recInstance rRec (Compl (AVar _ s) r) = foldM recInstance rRec (computePatterns sig s (removePlusses r))
                         recInstance rRec (Appl f ts) = foldM subInstance rRec (computeQt ts qDiff)
-                        subInstance rSub [] = Nothing -- found instance
-                        subInstance rSub ((ti, qi):tail) = case computeInstance rSub ti qi of
-                          Nothing -> subInstance rSub tail
-                          just    -> just -- no instance found for ti and qi
+                        subInstance rSub tqs = foldr computeSub Nothing tqs
+                          where computeSub (ti, qi) r = maybe r Just $ computeInstance rSub ti qi
+--                         subInstance rSub [] = Nothing -- found instance
+--                         subInstance rSub ((ti, qi):tail) = case computeInstance rSub ti qi of
+--                           Nothing -> subInstance rSub tail
+--                           just    -> just -- no instance found for ti and qi
 
 
 
@@ -411,10 +413,12 @@ getInst sig t0 q0 = case computeInstance M.empty t0 q0 of
                         getRecInstance rRec (Compl (AVar _ s) r) = foldM getRecInstance rRec (computePatterns sig s (removePlusses r))
                         getRecInstance rRec (Appl f ts) = foldM buildf rRec (computeQt ts qDiff)
                           where buildf rAppl tqs = left (Appl f) (getSubInstance rAppl tqs)
-                        getSubInstance rSub ((ti, qi):[]) = left (\vi -> [vi]) (computeInstance rSub ti qi)
-                        getSubInstance rSub ((ti, qi):tail) = case computeInstance rSub ti qi of
-                          Right r' -> Right r'
-                          Left vi  -> left (vi:) (getSubInstance rSub tail)
+                        getSubInstance rSub tqs = foldr computeSub (Left []) tqs
+                          where computeSub (ti, qi) tail = either ((`left` tail) . (:)) Right (computeInstance rSub ti qi)
+--                         getSubInstance rSub [] = Left []
+--                         getSubInstance rSub ((ti, qi):tail) = case computeInstance rSub ti qi of
+--                           Right r' -> Right r'
+--                           Left vi  -> left (vi:) (getSubInstance rSub tail)
 
 
 
