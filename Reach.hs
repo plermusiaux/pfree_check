@@ -63,6 +63,7 @@ getReachMin sig s0 p r0
                   where d = domain sig c
                         accuSubReach q = foldM computeReach reach' (zipWith Reach d q)
 
+-- return all possible distributions of r over c
 computeQc :: Signature -> FunName -> (S.Set Term) -> [[S.Set Term]]
 computeQc sig c r = foldr getDist [replicate (length d) S.empty] r
   where getDist (Appl g ts) tQc

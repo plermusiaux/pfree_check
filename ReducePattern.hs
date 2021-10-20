@@ -123,13 +123,12 @@ normalizeSig sig@(Signature ctors funs) = Signature ctors tFuns
                     (Plus u1 u2) # so = Plus (u1 # so) (u2 # so)
                     (Appl g tl)  # _  = Appl g (zipWith (#) tl (domain sig g))
 
--- compare each subterm of the lhs to its expected form,
--- as defined by the annotated type of the function, such that
--- we obtain for each variable on the lhs a pattern of the form x\r,
--- with x an annotated variable and r a sum of contructor pattern,
--- expressing its expected shape as induced by the annotated type.
--- the corresponding variable in the rhs is then replaced by this pattern.
--- the obtained patterns are qsymb
+-- for each profile of the annotated symbol of the lhs,
+-- infer, as qaddt patterns, the possible shapes of the variables
+-- such that the lhs verifies the expected pattern-free properties.
+-- for all possible inference, generate the corresponding rhs
+-- by replacing the corresponding variables with the inferred pattern.
+-- the obtained rhs patterns are qsymb
 replaceVariables :: Signature -> Rule -> [AType] -> [Rule]
 replaceVariables sig (Rule (Appl f ls) rhs) d = foldl accuRule [] lterms
   where lterms = removePlusses (Appl f subLterms)

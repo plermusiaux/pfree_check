@@ -62,8 +62,8 @@ checkRule sig c r@(Rule (Appl f _) _) = foldl accuCheck (c, M.empty) rules
           | nlcheck           = (cache, m)
           | otherwise         = (cache, M.insert (Rule lhs rhs) (p, [rhs]) m)
           where (cache1, equi) = buildEqui sig cache rhs
-                (cache2, fails) = trace ("checking RULE " ++ show (Rule lhs equi)) (checkPfree sig cache1 (equi,p))
-                nlcheck = trace ("checking NL RULE " ++ show (Rule lhs rhs)) (checkPfreeNL sig (rhs, p))
+                (cache2, fails) = trace ("checking RULE " ++ show (Rule lhs equi)) $ checkPfree sig cache1 (equi,p)
+                nlcheck = trace ("checking NL RULE " ++ show (Rule lhs rhs)) $ checkPfreeNL sig (rhs, p)
         rules = concatMap buildRule (map buildDomain (profile sig f))
         buildRule (_, Bottom) = []
         buildRule (ad, p) = zip (replaceVariables sig r ad) (repeat p)
@@ -103,13 +103,13 @@ checkPfree sig c0 (t, p) = accuCheck (c0, []) t
           Just res -> trace ("checked AVar " ++ show u) (c, res ++ l)
           Nothing | all (check sig p) reachables -> (Cache (M.insert (u', p) [] m), l)
                   | otherwise                    -> (Cache (M.insert (u', p) [u'] m), u':l)
-                  where reachables = trace ("checking AVar " ++ show u) (getReachable sig s S.empty)
+                  where reachables = trace ("checking AVar " ++ show u) $ getReachable sig s S.empty
           where u' = AVar NoName s
         accuCheck (c@(Cache m), l) u@(Compl (AVar _ s) r) = case M.lookup (u',p) m of
           Just res -> (c, res ++ l)
           Nothing | all (check sig p) reachables -> (Cache (M.insert (u', p) [] m), l)
                   | otherwise                    -> (Cache (M.insert (u', p) [u'] m), u':l)
-                  where reachables = trace ("checking Compl " ++ show u) (getReachable sig s (removePlusses r))
+                  where reachables = trace ("checking Compl " ++ show u) $ getReachable sig s (removePlusses r)
           where u' = Compl (AVar NoName s) r
         accuCheck (c, l) (Alias _ u) = accuCheck (c, l) u
 
@@ -117,7 +117,7 @@ checkPfree sig c0 (t, p) = accuCheck (c0, []) t
 -- with t a qaddt term and p a sum of constructor patterns
 check :: Signature -> Term -> Term -> Bool
 check _ Bottom _ = True
-check sig p t = trace ("checking if BOTTOM: " ++ show t ++ " X " ++ show p) (checkConj (conjunction sig t p))
+check sig p t = trace ("checking if BOTTOM: " ++ show t ++ " X " ++ show p) $ checkConj (conjunction sig t p)
   where checkConj Bottom = True
         checkConj t = all (isBotMap . (getCheckMap sig (VarMap M.empty))) (removePlusses t)
 -- check sig t (Plus p1 p2) = (check sig t p1) && (check sig t p2)

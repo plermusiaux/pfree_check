@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, TupleSections #-}
 
 module FreeCheckNL ( checkTRSnl, checkPfreeNL ) where
 
@@ -99,7 +99,7 @@ checkRule sig c0 r@(Rule (Appl f _) _) = foldl accuCheck (c0, M.empty) rules
 checkPfree :: Signature -> Cache -> (Term, Term) -> (Cache, Term)
 checkPfree _ c0 (t0, Bottom) = (c0, t0)
 checkPfree sig c0 (t0, p0) = trace ("checking " ++ show p0 ++ "-free: " ++ show t0) $ instantiate sig checkMap t0
-  where checkMap = either id (\c -> (c, BotMap)) $ recCheck c0 t0 [p0] (VarMap M.empty) S.empty
+  where checkMap = either id (,BotMap) $ recCheck c0 t0 [p0] (VarMap M.empty) S.empty
         convert fSet x@(AVar _ _)  = (fSet, x)
         convert fSet a@(Alias _ _) = (fSet, a)
         convert fSet u@(Compl _ _) = (fSet, u)
@@ -132,6 +132,10 @@ checkPfree sig c0 (t0, p0) = trace ("checking " ++ show p0 ++ "-free: " ++ show 
           Nothing          -> Left (c, cMap)
           Just (tf, fSet') -> recCheck c tf [] cMap fSet'
 
+-- given the profiles of f select the combinations of profiles
+-- such that for all instances v of t verifying the right-hand side,
+-- there exists p in ql such that v is p-free.
+-- return the left-hand sides of these combinations of profiles
 selectProfiles :: Signature -> Cache -> FunName -> Term -> [Term] -> (Cache, [[Term]])
 selectProfiles sig c0 f t ql = (cf, map fst oks)
   where (cf, (oks, _)) = getCombinations (partition c0 (profile sig f))
@@ -199,6 +203,7 @@ getCheckMap sig (Compl v@(AVar x _) q) r = checkInsert sig x (v, collect q) r
 --------------------------------- no cache ------------------------------------
 
 
+-- using a local cache seems to be more efficient than the no cache version below
 checkPfreeNL :: Signature -> (Term, Term) -> Bool
 checkPfreeNL sig = isBottom . snd . (checkPfree sig emptyCache)
 
@@ -423,7 +428,7 @@ getInst sig t0 q0 = case computeInstance M.empty t0 q0 of
 
 
 
-
+-- return all possible distributions of qs over ts
 computeQt :: [Term] -> [Term] -> [[(Term, [Term])]]
 computeQt ts qs = foldr getDist [zip ts (repeat [])] qs
   where getDist q tQ = concatMap distribute tQ
@@ -438,6 +443,11 @@ computeQt ts qs = foldr getDist [zip ts (repeat [])] qs
 --           where txq = conjunction sig t q
 --         distribute (ql, t) = (q:ql, t)
 
+
+-- l0 must be a list of pairs (ql, t) where t is the conjunction of ql
+-- (initialized with [], and folded to guarantee the property)
+-- return the list of such pairs when the conjunction with q is not bottom
+-- used to generate all possible conjunctions of a list of term
 powerConj :: Signature -> Term -> [([Term], Term)] -> [([Term], Term)]
 powerConj _ q [] = [([q], q)]
 powerConj sig q l0 = foldr accuConj l0 l0
@@ -446,6 +456,11 @@ powerConj sig q l0 = foldr accuConj l0 l0
           | otherwise    = (q:ql, txq):l
           where txq = conjunction sig t q
 
+-- pQ must be a list of pairs (ql, x) where x is the conjunction of ql
+-- and all terms of q0 in ql are in the same order (q0 and ql are 2 sublists of a bigger one)
+-- return the list of pairs (qDiff, q) where qDiff is a not empty difference ql \ q0
+-- and q is a not bottom conjunction of t and x (\ie of t and ql)
+-- used to filter conjunction not already considered and compatible with the current term
 selectPConj :: Signature -> Term -> [Term] -> [([Term], Term)] -> [([Term], Term)]
 selectPConj sig t q0 pQ = foldr accuSelect [(q0, t)] pQ
   where checkDiff [] l = Just l
@@ -458,6 +473,8 @@ selectPConj sig t q0 pQ = foldr accuSelect [(q0, t)] pQ
           Just qDiff -> if isBottom txq then l else (qDiff, txq):l
           where txq = conjunction sig t q
 
+-- generate (as a list) the complement of p-free constructor patterns of sort s
+-- with the set of terms rSet
 computePatterns :: Signature -> AType -> S.Set Term -> [Term]
 computePatterns sig (AType s p) rSet = concatMap buildPatterns (ctorsOfRange sig s)
   where prSet = S.union rSet (removePlusses p)
