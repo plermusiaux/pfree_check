@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module FreeCheck (checkTRS) where
 
 import Debug.Trace

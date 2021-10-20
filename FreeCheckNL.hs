@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, TupleSections #-}
+{-# LANGUAGE TupleSections #-}
 
 module FreeCheckNL ( checkTRSnl, checkPfreeNL ) where
 
