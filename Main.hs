@@ -9,17 +9,19 @@ import FreeCheck
 import FreeCheckNL ( checkTRSnl )
 import Parser
 
-data Flag = NonLinear             -- -p --non-linear
-          | Help                  -- -h --help
-          deriving (Eq,Ord,Enum,Show,Bounded)
-
-flags = [ Option ['p']    ["non-linear"] (NoArg NonLinear)
+flags = [ Option ['p'] ["non-linear"] (NoArg NonLinear)
             "Run a full non-linear analysis"
+         ,Option ['l'] ["linear"]     (NoArg Linearized)
+            "Run a linearize analysis"
+         ,Option ['s'] ["strict"]     (NoArg Strict)
+            "Run a strict non-linear analysis"
          ,Option ['h'] ["help"]       (NoArg Help)
             "Print this help message"
         ]
 
 parse argv = case getOpt Permute flags argv of
+
+  ([],[filename],[]) -> return ([Default], filename)
 
   (args,[filename],[]) -> do
       if Help `elem` args
@@ -39,6 +41,6 @@ main = do
   case parseModule filename s of
     Left err               -> putStrLn (show err)
     Right (Module sig trs) -> if elem NonLinear flags
-                              then print (checkTRSnl sig trs)
-                              else print (checkTRS sig trs)
+                              then print $ checkTRSnl sig trs
+                              else print $ checkTRS (head flags) sig trs
 

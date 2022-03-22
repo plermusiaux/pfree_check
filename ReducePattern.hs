@@ -1,4 +1,4 @@
-module ReducePattern ( appl, complement, conjunction, normalizeSig, replaceVariables ) where
+module ReducePattern ( appl, complement, conjunction, normalizeSig, inferRules ) where
 
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -148,4 +148,11 @@ replaceVariables sig (Rule (Appl f ls) rhs) d = foldl accuRule [] lterms
                   Nothing -> error ("variable " ++ show x ++ " unknown")
                 s = range sig f
 
+
+inferRules :: Signature -> Rule -> [(Rule, Term)]
+inferRules sig r@(Rule (Appl f _) _) = concatMap buildRule (map buildDomain (profile sig f))
+  where buildRule (_, Bottom) = []
+        buildRule (ad, p) = zip (replaceVariables sig r ad) (repeat p)
+        buildDomain (qs, p) = (zipWith AType d qs, p)
+        d = domain sig f
 

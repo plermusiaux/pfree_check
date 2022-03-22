@@ -82,16 +82,11 @@ checkTRSnl sig rules = snd (foldl accuCheck (emptyCache, M.empty) rules)
 -- then check that the term obtained verifies the corresponding pattern-free property.
 -- return a list of terms that do not satisfy the expected pattern-free properties
 checkRule :: Signature -> Cache -> Rule -> (Cache, M.Map Rule (Term,Term))
-checkRule sig c0 r@(Rule (Appl f _) _) = foldl accuCheck (c0, M.empty) rules
+checkRule sig c0 r = foldl accuCheck (c0, M.empty) $ inferRules sig r
   where accuCheck (c, m) (Rule lhs rhs, p)
           | isBottom ct = (c', m)
           | otherwise   = (c', M.insert (Rule lhs rhs) (p, ct) m)
           where (c', ct) = trace ("checking RULE " ++ show (Rule lhs rhs)) $ checkPfree sig c (rhs, p)
-        rules = concatMap buildRule (map buildDomain (profile sig f))
-        buildRule (_, Bottom) = []
-        buildRule (ad, p) = zip (replaceVariables sig r ad) (repeat p)
-        buildDomain (qs, p) = (zipWith AType d qs, p)
-        d = domain sig f
 
 -- check that a term is p-free
 -- parameters: Signature, Pattern p (should be a sum of constructor patterns), Rhs term of a rule (should be a qsymb)
