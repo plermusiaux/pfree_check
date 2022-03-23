@@ -1,20 +1,22 @@
 module Generator (
-  generate,
   generateBlankSig,
   generateFunc,
-  generateTRS,
-  generateP) where
+  generateP,
+  generateTRS) where
 
 import Datatypes
 import Signature
 
 import qualified Data.Map as M
+import Data.Maybe
 import System.Random
 
-generateBlankSig :: Int -> Int -> ([Constructor], [TypeName])
-generateBlankSig ar nb = (constructors, sorts)
-  where constructors = concatMap (generateConst ar sorts) sorts
-        sorts = [ TypeName ("s" ++ (show i)) | i <- [1..nb] ]
+generateBlankSig :: RandomGen g => g -> Int -> Int -> ([Constructor], [TypeName])
+generateBlankSig seed ar nb = (constructors, sorts)
+  where sorts = [ TypeName ("s" ++ (show i)) | i <- [1..nb] ]
+        rBsl = zip3 (genSeedList s1 nb) (rBoolList s2 nb) sorts
+        constructors = concatMap (generateConst ar sorts) rBsl
+        (s1, s2) = split seed
 
 generateP :: RandomGen g => g -> [Constructor] -> Int -> Term
 generateP _ _ 0 = AVar (VarName "_") Unknown
@@ -34,13 +36,19 @@ generate seed ar d rules = Module sig (generateTRS sig s2 (2*d`div`3) rules)
 generateSig :: RandomGen g => g -> Int -> Int -> Signature
 generateSig seed ar d = Signature constructors functions 
   where sorts = [ TypeName ("s" ++ (show i)) | i <- [1..nb] ]
-        constructors = concatMap (generateConst ar sorts) sorts
+        rBsl = zip3 (genSeedList s1 nb) (rBoolList s2 nb) sorts
+        constructors = concatMap (generateConst ar sorts) rBsl
         functions = generateFunc seed d (2*d`div`3) constructors sorts
+        (s1, s2) = split seed
         nb = 2
 
-generateConst :: Int -> [TypeName] -> TypeName -> [Constructor]
-generateConst ar sorts range@(TypeName s) = map createConst [1..nb^ar]
+generateConst :: RandomGen g => Int -> [TypeName] -> (g, Bool, TypeName)  -> [Constructor]
+generateConst ar sorts (seed, b, range@(TypeName s))
+  | b          = c : map createConst [1..nb^ar]
+  | rBool seed = c : map createConst [1..nb^ar]
+  | otherwise  = map createConst [1..nb^ar]
   where nb = length sorts
+        c = Constructor (FunName ("c" ++ s)) [] range
         createConst i = Constructor name domain range
           where name = FunName ("c" ++ (show i) ++ "_" ++ s)
                 domain = generateDomain ar (i-1) sorts
@@ -74,7 +82,7 @@ generatePattern seed cs d b sort
   | rBool seed = Appl rC (map genSub bsl)
   | otherwise  = AVar (VarName "_") Unknown
   where (s1, s2) = split seed
-        rC = getRandomConst s1 cs sort
+        rC = getRandomConst s1 cs b sort
         dom = domain (Signature cs []) rC
         ar = length dom
         rBsl = zip3 (genSeedList seed ar) (rBoolList s2 ar) dom
@@ -95,7 +103,7 @@ generateRule sig seed d = Rule lhs (generateRhs sig s2 m d True sort)
 generateLhs :: RandomGen g => Signature -> g -> Term
 generateLhs sig@(Signature cs _) seed = Appl f [Appl c xs]
   where f = FunName "f"
-        c = getRandomConst seed cs ((domain sig f)!!0)
+        c = getRandomConst seed cs True ((domain sig f)!!0)
         xs = map createVar [1..length (domain sig c)]
         createVar i = AVar (VarName ("x" ++ show i)) Unknown
 
@@ -115,7 +123,7 @@ generateRhs sig@(Signature cs _) seed m d b sort
   | rBool s2  = Appl rC (map genSub bsl)
   | otherwise = generateRhs sig s1 m 0 True sort
   where (s1, s2) = split seed
-        rC = getRandomConst s1 cs sort
+        rC = getRandomConst s1 cs b sort
         dom = domain (Signature cs []) rC
         ar = length dom
         rBsl = zip3 (genSeedList seed ar) (rBoolList s2 ar) dom
@@ -140,9 +148,11 @@ rBoolList :: RandomGen g => g -> Int -> [Bool]
 rBoolList seed size = (replicate (rI-1) False) ++ True : (replicate (size-rI) False) 
   where rI = fst (randomR (0, size-1) seed)
 
-getRandomConst :: RandomGen g => g -> [Constructor] -> TypeName -> FunName
-getRandomConst seed cList sort = getRandom seed cListS
-  where cListS = ctorsOfRange (Signature cList []) sort
+getRandomConst :: RandomGen g => g -> [Constructor] -> Bool -> TypeName -> FunName
+getRandomConst seed cList b sort = getRandom seed cListS
+  where cListS = mapMaybe (getConst b) cList
+        getConst True (Constructor _ [] _) = Nothing
+        getConst _ (Constructor c _ range) = if sort == range then Just c else Nothing
 
 getRandom :: RandomGen g => g -> [a] -> a
 getRandom seed l = l !! (fst (randomR (0, (length l) -1) seed))
