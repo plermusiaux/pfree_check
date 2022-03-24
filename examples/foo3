@@ -1,0 +1,27 @@
+CONSTRUCTORS
+
+c : S2 * S2 -> S1
+d : S1 -> S1
+
+a : S2
+b : S2
+
+
+FUNCTIONS
+
+foo : S1 -> S1 [- c(a(), b()) ]
+
+bar : S2 [- b()] * S2 -> S2 [- b()]
+    | S2 * S2 [- b()] -> S2 [- b()]
+
+bar2 : S2 [- a()] -> S2 [- b()]
+
+g : S1 -> S2
+
+RULES
+
+foo(c(x, x)) -> c(bar2(a()), bar2(x))
+foo(c(x, y)) -> c(bar(x,y), bar(y,x))
+// if sigma(x)=sigma(y), sigma(bar(x,y))=sigma(bar(y,x)), so c(...) is c(a(),b())-free
+// otherwise, one is not b(), hence bar(y,x) is b()-free and c(...) is c(a(),b())-free
+foo(d(x)) -> c(bar2(a()), bar2(g(x)))

@@ -9,4 +9,4 @@ executable pfreecheck
   build-depends:       base, containers, criterion, deepseq, directory, parsec, random
   default-language:    Haskell2010
   ghc-options:         -O2
-  other-modules: Datatypes, FreeCheck, Generator, Signature, Parser
+  other-modules: AlgoUtils, Datatypes, FreeCheck, FreeCheckNL, Generator, Parser, Reach, ReducePattern, Signature

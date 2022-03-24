@@ -16,8 +16,10 @@ import Control.DeepSeq (deepseq)
 
 import Datatypes
 import FreeCheck
+import FreeCheckNL (checkTRSnl)
 import Generator
 import Parser
+import Reach (getReachable)
 
 collect :: [Either a b] -> Either [a] [b]
 collect es = select (partitionEithers es)
@@ -65,14 +67,20 @@ getRandomPfree = map genMod [11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
                 (s1, s2) = split g
 
 makeBenchmarks :: [(FilePath, Module)] -> [(Int, Module)] -> [(Int, Signature, Term)] -> [(Int, Module)] -> [Benchmark]
-makeBenchmarks namedModules rModules rReaches rPfree = [ bgroup "default" $ makeModuleBenches,
+makeBenchmarks namedModules rModules rReaches rPfree = [ bgroup "default" $ makeModuleBenches Default,
+                                                         bgroup "linearized" $ makeModuleBenches Linearized,
+                                                         bgroup "strict" $ makeModuleBenches Strict,
+                                                         bgroup "non-linear" $ makeModuleBenches NonLinear,
                                                          bgroup "getReachable" $ map makeRRBench rReaches,
                                                          bgroup "pFreeCheck" $ map makePFBench rPfree ]
   where makeRRBench (i, sig, p) = bench ("random seed " ++ show i) $ nf (getReachable sig (AType "s1" p)) empty
-        makePFBench (i, Module sigM trs) = bench ("random seed " ++ show i) $ nf (checkTRS sigM) trs
-        makeModuleBenches = (map makeMBench namedModules) ++ (map makeRMBench rModules)
-          where makeMBench (name, Module sigM trs) = bench name $ nf (checkTRS sigM) trs
-                makeRMBench (i, Module sigM trs) = bench ("random seed " ++ show i) $ nf (checkTRS sigM) trs
+        makePFBench (i, Module sigM trs) = bench ("random seed " ++ show i) $ nf (checkTRS Default sigM) trs
+        makeModuleBenches NonLinear = (map makeMBench namedModules) ++ (map makeRMBench rModules)
+          where makeMBench (name, Module sigM trs) = bench name $ nf (checkTRSnl sigM) trs
+                makeRMBench (i, Module sigM trs) = bench ("random seed " ++ show i) $ nf (checkTRSnl sigM) trs
+        makeModuleBenches flag = (map makeMBench namedModules) ++ (map makeRMBench rModules)
+          where makeMBench (name, Module sigM trs) = bench name $ nf (checkTRS flag sigM) trs
+                makeRMBench (i, Module sigM trs) = bench ("random seed " ++ show i) $ nf (checkTRS flag sigM) trs
 
 main = do
   modules <- getModules
