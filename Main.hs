@@ -37,31 +37,31 @@ getModules = do
       return (zip files modules)
 
 getRandomModules :: [(Int, Module)]
-getRandomModules = map genMod [11, 19, 29, 47]
+getRandomModules = map genMod [11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
   where genMod i = (i, Module sig (genTRS s2 sig))
           where (s1, s2) = split (mkStdGen i)
                 sig = genSig s1
-        genTRS g sig = generateTRS sig g 4 25         -- depth_rhs = 4, nb_rules = 25
+        genTRS g sig = generateTRS sig g 100 25        -- nb_sb_rhs = 100, nb_rules = 25
         genSig g = Signature cs fs
           where (cs, sorts) = generateBlankSig s1 6 2 -- arity = 6, nb_sort = 2
-                fs = generateFunc g 6 6 cs sorts      -- depth = 6, depth_annotation = 6
+                fs = generateFunc g 50 50 cs sorts    -- nb_sb_p = 50, nb_sb_q = 50
                 (s1, s2) = split g
 
 getRandomReaches :: [(Int, Signature, Term)]
-getRandomReaches = map gen [13, 31, 41, 53]
-  where gen i = (i, Signature cs [], generateP s2 cs 8) -- depth = 8
+getRandomReaches = map gen [11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+  where gen i = (i, Signature cs [], generateP s2 cs 100) -- nb_sb_p = 100
           where (s1, s2) = split (mkStdGen i)
                 (cs, _) = generateBlankSig s1 6 2       -- arity = 6, nb_sort = 2
 
 getRandomPfree :: [(Int, Module)]
-getRandomPfree = map genMod [17, 23, 37, 43]
+getRandomPfree = map genMod [11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
   where genMod i = (i, Module sig (genTRS s2 sig))
           where (s1, s2) = split (mkStdGen i)
                 sig = genSig s1
-        genTRS g sig = generateTRS sig g 5 1          -- depth_rhs = 5, nb_rules = 1
+        genTRS g sig = generateTRS sig g 100 1        -- nb_sb_rhs = 100, nb_rules = 1
         genSig g = Signature cs fs 
           where (cs, sorts) = generateBlankSig s1 6 2 -- arity = 6, nb_sort = 2
-                fs = generateFunc s2 5 5 cs sorts     -- depth = 5, depth_annotation = 5
+                fs = generateFunc s2 50 50 cs sorts   -- nb_sb_p = 50, nb_sb_q = 50
                 (s1, s2) = split g
 
 makeBenchmarks :: [(FilePath, Module)] -> [(Int, Module)] -> [(Int, Signature, Term)] -> [(Int, Module)] -> [Benchmark]
@@ -80,4 +80,3 @@ main = do
   where rModules = getRandomModules
         rReaches = getRandomReaches
         rPfree = getRandomPfree
-
