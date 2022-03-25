@@ -30,7 +30,7 @@ data Flag = Default
 -- return the semantics equivalent of a term
 buildEqui :: Flag -> Signature -> Cache -> Term -> (Cache, Term)
 buildEqui flag sig c0 t@(Appl f ts)
-  | isFunc sig f = (c2, AVar (VarName (show t)) (AType (range sig f) p))
+  | isFunc sig f = (c2, AVar x (AType (range sig f) p))
   | otherwise    = (c1, Appl f equis)
   where (c1, equis) = foldr buildSub (c0, []) ts
         buildSub t (cache, l) = (cache', t':l)
@@ -43,6 +43,8 @@ buildEqui flag sig c0 t@(Appl f ts)
           | null fails = Right cache' -- t is p-free
           | otherwise  = Left cache'  -- t is not p-free, stop subCheck computation
           where (cache', fails) = checkPfree flag sig cache tp
+        x = case flag of Strict -> NoName
+                         _      -> (VarName (show t))
 buildEqui _ _ c t = (c, t)
 
 ------------------------------------------------------------------------------

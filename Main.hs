@@ -33,7 +33,7 @@ parse argv = case getOpt Permute flags argv of
       hPutStrLn stderr (concat errs ++ usageInfo header flags)
       exitWith (ExitFailure 1)
 
-  where header = "Usage: ./Main file [--non-linear]"
+  where header = "Usage: ./Main file [OPTION]"
 
 main = do
   (flags, filename) <- getArgs >>= parse
