@@ -7,7 +7,7 @@ import Control.Monad ( foldM )
 
 import Debug.Trace
 
-import Data.List ( isSubsequenceOf, partition )
+import Data.List ( isSubsequenceOf )
 import Data.Either
 import Data.Maybe
 import qualified Data.Map as M
@@ -26,42 +26,73 @@ data Cache = Cache (M.Map (Term, [Term]) Term)
 emptyCache = Cache M.empty
 
 
-complementC :: Signature -> Cache -> Term -> Term -> (Cache, Term)
-complementC sig c0 p1 p2 = comp c0 p1 p2
+complementC :: Signature -> Cache -> Term -> [Term] -> (Cache, Term)
+complementC sig c0 t0 q0
+  | any isBottom q0 = (c0, Bottom)
+  | otherwise = comp c0 t0 q0
   where
-    comp c u (AVar _ (AType _ Bottom)) = (c, Bottom)                      --M1
-    comp c u Bottom = (c, u)                                              --M2
-    comp c (Plus q1 q2) p = (c2, plus p1 p2)                              --M3
-      where (c1, p1) = comp c q1 p
-            (c2, p2) = comp c1 q2 p
---    (Var x) \\ p@(Appl g ps) = alias x (sum [pattern f \\ p | f <- fs])
---      where fs = ctorsOfSameRange sig g
---            pattern f = Appl f (replicate (arity sig f) (Var "_"))
-    comp c Bottom _ = (c, Bottom)                                         --M5
-    comp c p@(Appl _ _) (Plus q1 q2) = (c2, p2)                           --M6
-      where (c1, p1) = comp c p q1
-            (c2, p2) = comp c1 p1 q2
-    comp c (Appl f ps) (Appl g qs)
-      | f /= g        = (c, appl f ps)                                    --M8
-      | someUnchanged = (c', appl f ps)
-      | otherwise = (c', sumTerm [appl f ps' | ps' <- interleave ps pqs]) --M7
-      where (c', pqs) = foldr accuComp (c,[]) (zip ps qs)
-            someUnchanged = or (zipWith (==) ps pqs)
-    comp c u@(Appl f ts) (AVar _ (AType _ q)) = (c', plus match subMatch) --C1
-      where match = conjunction sig u q
-            subMatch = sumTerm [appl f ps | ps <- interleave ts tqs]
-            (c', tqs) = foldr accuComp (c,[]) (zip ts (map buildVar (domain sig f)))
-            buildVar s = AVar NoName (AType s q)
-    comp c (Compl v t) u = comp c v (plus t u)                            --C2
-    comp c v@(AVar x sp) t = case getInstance sig c v (collect t) of
-      r@(_, Bottom) -> r                                                  --C3
-      (c', _)       -> (c', Compl v t) --Alias x (Compl (AVar NoName sp) t)
-    comp c a@(Alias x p) t = case getInstance sig c a (collect t) of
-      r@(_, Bottom) -> r                                                  --C3'
-      (c', _)       -> (c', Compl a t)
-    accuComp (pi, qi) (ci, ts) = (ci', ti:ts)
-      where (ci', ti) = comp ci pi qi
---    p1 \\ Alias x p2 = p1 \\ p2
+    comp c u [] = (c, u)
+    comp c (Plus u1 u2) q = (c2, plus p1 p2)
+      where (c1, p1) = comp c u1 q
+            (c2, p2) = comp c1 u2 q
+    comp c u@(Appl _ _) q = foldl accuComp (c, Bottom) powerQ
+      where powerQ = selectPConj sig u q powerQ0
+            accuComp (c', t) (q', u') = (cd, plus t t')
+              where (cd, t') = distComp c' u' q'
+    comp c (Compl v t) q = comp c v $ (collect t) ++ q
+    comp c v@(AVar x (AType s _)) q = case getInstance sig c v q of
+      r@(_, Bottom) -> r
+      (c', _)       -> (c', Compl v $ foldr (plus.(buildVar s)) Bottom q)
+    comp c a@(Alias x p) q = case getInstance sig c a q of
+      r@(_, Bottom) -> r
+      (c', _)       -> (c', Compl a $ foldr (plus.(buildVar s)) Bottom q)
+      where s = inferType sig p
+    distComp c (Appl f us) q = foldl accuComp (c, Bottom) (computeQt us q)
+      where accuComp (ct, t) tqs = (c', plus t (Appl f ts))
+              where (c', ts) = foldr compSub (ct, []) tqs
+            compSub (ui, qi) (ci, ts) = (c', ti:ts)
+              where (c', ti) = comp ci ui qi
+    distComp c u q = comp c u q
+    powerQ0 = foldr (powerConj sig) [] q0
+    buildVar s q = AVar NoName (AType s q)
+
+
+-- complementC :: Signature -> Cache -> Term -> Term -> (Cache, Term)
+-- complementC sig c0 p1 p2 = comp c0 p1 p2
+--   where
+--     comp c u (AVar _ (AType _ Bottom)) = (c, Bottom)                      --M1
+--     comp c u Bottom = (c, u)                                              --M2
+--     comp c (Plus q1 q2) p = (c2, plus p1 p2)                              --M3
+--       where (c1, p1) = comp c q1 p
+--             (c2, p2) = comp c1 q2 p
+-- --    (Var x) \\ p@(Appl g ps) = alias x (sum [pattern f \\ p | f <- fs])
+-- --      where fs = ctorsOfSameRange sig g
+-- --            pattern f = Appl f (replicate (arity sig f) (Var "_"))
+--     comp c Bottom _ = (c, Bottom)                                         --M5
+--     comp c p@(Appl _ _) (Plus q1 q2) = (c2, p2)                           --M6
+--       where (c1, p1) = comp c p q1
+--             (c2, p2) = comp c1 p1 q2
+--     comp c (Appl f ps) (Appl g qs)
+--       | f /= g        = (c, appl f ps)                                    --M8
+--       | someUnchanged = (c', appl f ps)
+--       | otherwise = (c', sumTerm [appl f ps' | ps' <- interleave ps pqs]) --M7
+--       where (c', pqs) = foldr accuComp (c,[]) (zip ps qs)
+--             someUnchanged = or (zipWith (==) ps pqs)
+--     comp c u@(Appl f ts) (AVar _ (AType _ q)) = (c', plus match subMatch) --C1
+--       where match = conjunction sig u q
+--             subMatch = sumTerm [appl f ps | ps <- interleave ts tqs]
+--             (c', tqs) = foldr accuComp (c,[]) (zip ts (map buildVar (domain sig f)))
+--             buildVar s = AVar NoName (AType s q)
+--     comp c (Compl v t) u = comp c v (plus t u)                            --C2
+--     comp c v@(AVar x sp) t = case getInstance sig c v (collect t) of
+--       r@(_, Bottom) -> r                                                  --C3
+--       (c', _)       -> (c', Compl v t) --Alias x (Compl (AVar NoName sp) t)
+--     comp c a@(Alias x p) t = case getInstance sig c a (collect t) of
+--       r@(_, Bottom) -> r                                                  --C3'
+--       (c', _)       -> (c', Compl a t)
+--     accuComp (pi, qi) (ci, ts) = (ci', ti:ts)
+--       where (ci', ti) = comp ci pi qi
+-- --    p1 \\ Alias x p2 = p1 \\ p2
 
 
 -------------------------------------------------------------------------------
@@ -111,17 +142,22 @@ checkPfree sig c0 (t0, p0) = trace ("checking " ++ show p0 ++ "-free: " ++ show 
         recCheck c t@(Appl f ts) pl cMap@(VarMap vMap) fSet = foldM check c' (removePlusses tm)
           where check cc ti = nextF fSet' $ getCheckMap sig ti (cc, cMap)
                 (fSet', ts') = foldr accuConvert (fSet, []) ts
-                (c', tm) = complementC sig cq (Appl f ts') (sumTerm ql)
-                  where (cq, ql)
-                          | isFunc sig f = (cp, map ((Appl f) . (zipWith buildVar d)) profiles)
-                          | otherwise    = (c, zipWith (flip buildVar) pl (repeat s))
-                          where s = range sig f
-                                d = domain sig f
-                                buildVar si qi = AVar NoName (AType si qi)
-                                (cp, profiles) = selectProfiles sig c f u pl'
-                                (u, pl') = case M.lookup (VarName (show t)) vMap of
-                                  Just (v, ql) -> (v, pl++ql)
-                                  Nothing -> (AVar NoName (AType s Bottom), pl)
+                (c', tm)
+                  | isFunc sig f = (cf, sumTerm $ map ((appl f).(map fst)) tqs)
+                  | otherwise = complementC sig c (Appl f ts') pl
+                  where (cf, tqs) = foldr accuComp (cp , [zip ts' (repeat [])]) profiles
+                        accuComp profile (cq, qs) = foldr (subComp profile) (cq, []) qs
+                        subComp profile tq (cq, l) = (cr, l' ++ l)
+                          where (cr, l') = distComp cq ts' profile tq
+                        distComp cq [] [] [] = (cq, [])
+                        distComp cq (ui:us) (pi:ps) ((vi, qi):qs) = case complementC sig cd ui (pi:qi) of
+                          (cr, Bottom) -> (cr, map ((vi, qi):) l)
+                          (cr, r)      -> (cr, ((r, pi:qi):qs):(map ((vi, qi):) l))
+                          where (cd, l) = distComp cq us ps qs
+                        (cp, profiles) = selectProfiles sig c f u pl'
+                        (u, pl') = case M.lookup (VarName (show t)) vMap of
+                          Just (v, ql) -> (v, pl++ql)
+                          Nothing -> (AVar NoName (AType (range sig f) Bottom), pl)
         nextF _ (c, BotMap) = Right c
         nextF fSet (c, cMap) = case S.maxView fSet of
           Nothing          -> Left (c, cMap)
@@ -445,7 +481,7 @@ computeQt ts qs = foldr getDist [zip ts (repeat [])] qs
 -- used to generate all possible conjunctions of a list of term
 powerConj :: Signature -> Term -> [([Term], Term)] -> [([Term], Term)]
 powerConj _ q [] = [([q], q)]
-powerConj sig q l0 = foldr accuConj l0 l0
+powerConj sig q l0 = ([q], q):foldr accuConj l0 l0
   where accuConj (ql, t) l
           | isBottom txq = l
           | otherwise    = (q:ql, txq):l
