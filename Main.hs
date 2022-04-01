@@ -71,16 +71,20 @@ makeBenchmarks namedModules rModules rReaches rPfree = [ bgroup "default" $ make
                                                          bgroup "linearized" $ makeModuleBenches Linearized,
                                                          bgroup "strict" $ makeModuleBenches Strict,
                                                          bgroup "non-linear" $ makeModuleBenches NonLinear,
-                                                         bgroup "getReachable" $ map makeRRBench rReaches,
-                                                         bgroup "pFreeCheck" $ map makePFBench rPfree ]
+                                                         bgroup "getReachable" $ map makeRRBench rReaches ]
   where makeRRBench (i, sig, p) = bench ("random seed " ++ show i) $ nf (getReachable sig (AType "s1" p)) empty
-        makePFBench (i, Module sigM trs) = bench ("random seed " ++ show i) $ nf (checkTRS Default sigM) trs
-        makeModuleBenches NonLinear = (map makeMBench namedModules) ++ (map makeRMBench rModules)
+        makeModuleBenches NonLinear = (map makeMBench namedModules) ++
+                                       [ bgroup "checkTRS" $ map makeRMBench rModules,
+                                         bgroup "checkPfree" $ map makePFBench rPfree ]
           where makeMBench (name, Module sigM trs) = bench name $ nf (checkTRSnl sigM) trs
                 makeRMBench (i, Module sigM trs) = bench ("random seed " ++ show i) $ nf (checkTRSnl sigM) trs
-        makeModuleBenches flag = (map makeMBench namedModules) ++ (map makeRMBench rModules)
+                makePFBench (i, Module sigM trs) = bench ("random seed " ++ show i) $ nf (checkTRSnl sigM) trs
+        makeModuleBenches flag = (map makeMBench namedModules) ++
+                                  [ bgroup "checkTRS" $ map makeRMBench rModules,
+                                    bgroup "checkPfree" $ map makePFBench rPfree ]
           where makeMBench (name, Module sigM trs) = bench name $ nf (checkTRS flag sigM) trs
                 makeRMBench (i, Module sigM trs) = bench ("random seed " ++ show i) $ nf (checkTRS flag sigM) trs
+                makePFBench (i, Module sigM trs) = bench ("random seed " ++ show i) $ nf (checkTRS flag sigM) trs
 
 main = do
   modules <- getModules
