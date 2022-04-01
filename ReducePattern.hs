@@ -53,7 +53,7 @@ complement sig p1 p2 = p1 \\ p2
 
 conjunction :: Signature -> Term -> Term -> Term
 conjunction sig p1 p2 = p1 * p2
-  where 
+  where
     Bottom * u = Bottom                                                   --E2
     u * Bottom = Bottom                                                   --E3
     (Plus u1 u2) * u = plus (u1 * u) (u2 * u)                             --S2
