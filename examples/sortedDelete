@@ -1,0 +1,23 @@
+CONSTRUCTORS
+
+true : Bool
+false : Bool
+
+A : Value
+B : Value
+
+cons : Value * List -> List
+nil : List
+
+FUNCTIONS
+
+delete : Value * List [- cons(B(), cons(A(), l))] -> List [- cons(B(), cons(A(), l))]
+       | Value * List [- cons(A(), l)] -> List [- cons(A(), l)]
+
+RULES
+
+delete(A(), cons(A(), l)) -> l
+delete(A(), cons(B(), l)) -> cons(B(), delete(A(), l))
+delete(B(), cons(A(), l)) -> cons(A(), delete(B(), l))
+delete(B(), cons(B(), l)) -> l
+delete(v, nil()) -> nil()

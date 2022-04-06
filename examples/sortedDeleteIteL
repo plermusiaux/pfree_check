@@ -1,0 +1,33 @@
+CONSTRUCTORS
+
+true : Bool
+false : Bool
+
+A : Value
+B : Value
+
+cons : Value * List -> List
+nil : List
+
+FUNCTIONS
+
+eq : Value [- A()] * Value [- A()] -> Bool [- false()]
+   | Value [- B()] * Value [- B()] -> Bool [- false()]
+   | Value [- A()] * Value [- B()] -> Bool [- true()]
+   | Value [- B()] * Value [- A()] -> Bool [- true()]
+
+delete : Value * List [- cons(B(), cons(A(), l))] -> List [- cons(B(), cons(A(), l))]
+       | Value * List [- cons(A(), l)] -> List [- cons(A(), l)]
+
+ite : Bool [- false()] * List [- cons(B(), cons(A(), l))] * List -> List [- cons(B(), cons(A(), l))]
+    | Bool [- true()] * List * List [- cons(B(), cons(A(), l))] -> List [- cons(B(), cons(A(), l))]
+    | Bool [- false()] * List [- cons(A(), l)] * List -> List [- cons(A(), l)]
+    | Bool [- true()] * List * List [- cons(A(), l)] -> List [- cons(A(), l)]
+
+RULES
+
+delete(x@(A() + B()), cons(y@(A() + B()), l)) -> ite(eq(x, y), l, cons(y, delete(x, l)))
+delete(v, nil()) -> nil()
+
+ite(true(), l1, l2) -> l1
+ite(false(), l1, l2) -> l2
