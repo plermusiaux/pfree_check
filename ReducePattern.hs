@@ -1,4 +1,4 @@
-module ReducePattern ( appl, complement, conjunction, normalizeSig, inferRules ) where
+module ReducePattern ( alias, appl, complement, conjunction, normalizeSig, inferRules ) where
 
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -33,7 +33,7 @@ complement sig p1 p2 = p1 \\ p2
     Bottom \\ u = Bottom                                                  --M5
     p@(Appl _ _) \\ (Plus p1 p2) = (p \\ p1) \\ p2                        --M6
     Appl f ps \\ Appl g qs
-        | f /= g || someUnchanged = appl f ps                             --M8
+        | f /= g || someUnchanged = Appl f ps                             --M8
         | otherwise = sumTerm [appl f ps' | ps' <- interleave ps pqs]     --M7
       where pqs = zipWith (\\) ps qs
             someUnchanged = or (zipWith (==) ps pqs)
@@ -81,12 +81,12 @@ conjunction sig p1 p2 = p1 * p2
 --              pattern a = Appl a (map buildVar (domain sig a))
 --              buildVar si = AVar "_" (AType si p)
     (AVar x (AType s p)) * (Appl f ts)
-        | s == range sig f = complement sig (alias x (Appl f zXts)) p    --P1
+        | s == range sig f = complement sig (alias x (appl f zXts)) p    --P1
         | otherwise        = Bottom
         where zXts = zipWith conjVar (domain sig f) ts
               conjVar si t = (AVar NoName (AType si p)) * t
     (Appl f ts) * (AVar x (AType s p))
-        | s == range sig f = complement sig (Appl f tXzs) p              --P2
+        | s == range sig f = complement sig (appl f tXzs) p              --P2
         | otherwise        = Bottom
         where tXzs = zipWith conjVar ts (domain sig f)
               conjVar t si = t * (AVar NoName (AType si p))
@@ -140,8 +140,8 @@ replaceVariables sig (Rule (Appl f ls) rhs) d = foldl accuRule [] lterms
           where varMap = getVarMap lhs s -- c(ti) * x^-bot is reduced to c(ti) so we build the annotated sorts manually for variables of ti
                 getVarMap t@(Alias x _) _ = M.singleton x t
                 getVarMap (Appl g ts) _ = M.unionsWith (conjunction sig) (zipWith getVarMap ts (domain sig g))
-                getVarMap (AVar x _) s = M.singleton x (AVar x (AType s Bottom))
-                getVarMap (Compl (AVar x _) r) s = M.singleton x (Compl (AVar x (AType s Bottom)) r)
+                getVarMap (AVar x _) s = M.singleton x (Alias x (AVar NoName (AType s Bottom)))
+                getVarMap (Compl (AVar x _) r) s = M.singleton x (Alias x (Compl (AVar x (AType s Bottom)) r))
                 replaceVar m (Appl f ts) = Appl f (map (replaceVar m) ts)
                 replaceVar m (AVar x Unknown) = case M.lookup x m of
                   Just t  -> t
