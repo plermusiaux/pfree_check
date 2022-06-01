@@ -1,0 +1,30 @@
+CONSTRUCTORS
+
+true : Bool
+false : Bool
+
+cons : Expr * List -> List
+nil : List
+
+bool : Bool -> Expr
+list : List -> Expr
+
+FUNCTIONS
+
+flattenE : Expr -> Expr [- cons(list(l1),l2) ]
+flattenL : List -> List [- cons(list(l1),l2) ]
+fconcat : List * List -> List [- cons(list(l1),l2) ]
+
+Rules
+
+flattenE(bool(b)) -> bool(b)
+flattenE(list(l)) -> list(flattenL(l))
+
+flattenL(cons(list(l1), l2)) -> fconcat(l1, l2)
+flattenL(cons(bool(b), l)) -> cons(bool(b), flattenL(l))
+flattenL(nil()) -> nil()
+
+fconcat(cons(bool(b), l1), l2) -> cons(bool(b), fconcat(l1,l2))
+fconcat(cons(list(l1), l2), l3) -> fconcat(l1, cons(list(l2),l3))
+fconcat(nil(), l) -> flattenL(l)
+
