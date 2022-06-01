@@ -1,5 +1,5 @@
 import Datatypes 
-import FreeCheck (checkTRS)
+import FreeCheck
 import Parser
 
 import Data.Maybe (fromJust)
@@ -59,7 +59,7 @@ run :: String -> String
 run s =
   case parseModule "text area" s of
     Left err -> show err
-    Right (Module sig trs) -> parseResult sig (checkTRS sig trs)
+    Right (Module sig trs) -> parseResult sig (checkTRS Default sig trs)
 
 main = do
   doc <- currentDocumentUnchecked

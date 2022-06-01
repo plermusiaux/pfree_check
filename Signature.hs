@@ -13,15 +13,16 @@
 -- limitations under the License.
 
 module Signature (
-  domain,
-  range,
-  profile,
   arity,
   ctorsOfRange,
   ctorsOfSameRange,
+  domain,
+  inferType,
+  isFunc,
   hasType,
+  profile,
   typeCheck,
-  isFunc
+  range
 ) where
 
 import Datatypes (FunName, TypeName, Constructor(..), Function(..), Signature(..), Term(..), AType(..))
@@ -105,3 +106,9 @@ typeCheck sig t0 s0 = case (t0 # s0) of
     (Compl u _) # s = u # s
     (Plus u1 u2) # s = maybe (u2 # s) Just (u1 # s)
 
+inferType :: Signature -> Term -> TypeName
+inferType sig t = typof t
+  where typof (Appl f _) = range sig f
+        typof (AVar _ (AType s _)) = s
+        typof (Alias _ u) = typof u
+        typof (Compl u _) = typof u

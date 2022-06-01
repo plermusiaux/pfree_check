@@ -1,40 +1,50 @@
 CONSTRUCTORS
 
-string : String
+name : Nat -> Name
 
-sig : String * Nat * Signature -> Signature
+sig : Name * Nat * Signature -> Signature
 empty : Signature
 
 nil : TermList
 cons : Term * TermList -> TermList
 
-lin : TermRList
-snoc : Term * TermRList -> TermRList
-
 bot : Term
-var : String -> Term
-appl : String * TermList -> Term
+var : Name -> Term
+appl : Name * TermList -> Term
 plus : Term * Term -> Term
 
 z : Nat
 s : Nat -> Nat
 
+true : Bool
+false : Bool
+
 FUNCTIONS
 
-add : Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] * Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] -> Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ]
+eq : Nat * Nat -> Bool
 
-removePlus : Term -> TermList [- plus(t1,t2) ]
+ite : Bool * Term [- cons(bot(),tl) ] * Term [- cons(bot(),tl) ] -> Term [- cons(bot(),tl) ]
+    | Bool * Term [- plus(bot(),v) ] * Term [- plus(bot(),v) ] -> Term [- plus(bot(),v) ]
+    | Bool * Term [- plus(u,bot()) ] * Term [- plus(u,bot()) ] -> Term [- plus(u,bot()) ]
+
+add : Term [- cons(bot(),tl) ] * Term [- cons(bot(),tl) ] -> Term [- cons(bot(),tl) ]
+    | Term [- plus(bot(),v) ] * Term [- plus(bot(),v) ] -> Term [- plus(bot(),v) ]
+    | Term [- plus(u,bot()) ] * Term [- plus(u,bot()) ] -> Term [- plus(u,bot()) ]
+    | Term [- cons(plus(t1,t2), tl) ] * Term [- cons(plus(t1,t2), tl) ] -> Term [- cons(plus(t1,t2), tl) ]
+
 complement : Signature * Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] * Term -> Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ]
 
 generate : Signature -> Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ]
-build : String * Nat * TermList [- bot() ] -> Term [- bot() ]
+build : Name * Nat * TermList [- bot() ] -> Term [- bot() ]
 
-interleave : String * TermList [- bot() ] * TermList * TermRList [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] * Signature -> Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ]
+interleave : Name * TermList [- bot() ] * TermList * TermList [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] * Signature -> Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ]
 
-collectPlus : Term * TermList [- plus(t1,t2) ] -> TermList [- plus(t1,t2) ]
-split : String * TermList [- plus(t1,t2) ] * TermList * TermRList [- plus(t1,t2) ]  -> TermList [- plus(t1,t2) ]
-reverse : TermRList [- plus(t1,t2) ] * TermList [- plus(t1,t2) ] -> TermList [- plus(t1,t2) ]
-concat : TermList [- plus(t1,t2) ] * TermList [- plus(t1,t2) ]  -> TermList [- plus(t1,t2) ]
+collectPlus : Term -> Term [- ( cons(bot()+plus(t1,t2),tl) + plus(bot(),v) + plus(u,bot()) ) ]
+
+split : Name * Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ] * TermList * TermList [- bot() ]  -> Term [- ( cons(bot(),tl) + plus(bot(),v) + plus(u,bot()) ) ]
+      | Name * Term [-  cons(plus(t1,t2),tl) ] * TermList * TermList [- plus(t1,t2) ]  -> Term [- cons(plus(t1,t2),tl) ]
+reverse : TermList [- bot() ] * TermList [- bot() ] -> TermList [- bot() ]
+        | TermList [- plus(t1,t2) ] * TermList [- plus(t1,t2) ] -> TermList [- plus(t1,t2) ]
 
 RULES
 
@@ -57,41 +67,33 @@ complement(sig, u, plus(v1,v2)) -> complement(sig, complement(sig,u,v1), v2)
 complement(sig, var(s), appl(f,l)) -> complement(sig, generate(sig), appl(f,l))
 complement(sig, bot(), appl(f, l)) -> bot()
 complement(sig, plus(u1,u2), appl(f,l)) -> add(complement(sig, u1, appl(f,l)), complement(sig, u2, appl(f,l)))
-complement(sig, appl(f,l1), appl(f,l2)) -> interleave(f, l1, l2, lin(), sig)
-complement(sig, appl(g,l1), appl(f,l2)) -> appl(f,l1)
+complement(sig, appl(name(f),l1), appl(name(g),l2)) -> ite(eq(f,g), interleave(name(f), l1, l2, nil(), sig), appl(name(f), l1))
 
 generate(sig(f,n,sig)) -> add(build(f,n,nil()), generate(sig))
 generate(empty()) -> bot()
 
 build(f, z(), l) -> appl(f, l)
-build(f, s(n), l) -> build(f, n, cons(var(string()), l))
+build(f, s(n), l) -> build(f, n, cons(var(name(n)), l))
 
-interleave(f, nil(), nil(), lin(), sig) -> bot()
-interleave(f, cons(u1,l1), cons(u2, nil()), rl, sig) -> interleave(f, l1, nil(), snoc(complement(sig,u1,u2), rl), sig)
-interleave(f, cons(u1,l1), cons(u2,l2), rl, sig) -> add(interleave(f, l1, nil(), snoc(complement(sig,u1,u2), rl), sig), interleave(f, l1, l2, snoc(u1,rl), sig))
-interleave(f, l1, nil(), snoc(bot(), rl), sig) -> bot()
-interleave(f, l1, nil(), snoc(u\bot(), rl), sig) -> interleave(f, cons(u, l1), nil(), rl, sig)
-// interleave(f, l1, nil(), snoc(var(s), rl), sig) -> interleave(f, cons(var(s), l1), nil(), rl, sig)
-// interleave(f, l1, nil(), snoc(appl(g,tl), rl), sig) -> interleave(f, cons(appl(g,tl), l1), nil(), rl, sig)
-// interleave(f, l1, nil(), snoc(plus(u1,u2), rl), sig) -> interleave(f, cons(plus(u1,u2), l1), nil(), rl, sig)
-interleave(f, l1, nil(), lin(), sig) -> appl(f,l1)
+interleave(f, cons(u1,l1), cons(u2,l2), rl, sig) -> add(split(f, complement(sig, u1, u2), l1, rl), interleave(f, l1, l2, cons(u1,rl), sig))
+interleave(f, cons(u1,l1), nil(), rl, sig) -> interleave(f, l1, nil(), cons(u1,rl), sig)
+interleave(f, nil(), l2, cons(u, rl), sig) -> appl(f, reverse(rl, cons(u, nil())))
+interleave(f, nil(), l2, nil(), sig) -> bot()
 
+split(f, plus(t1,t2), tl, rl) -> add(split(f, t1, tl, rl), split(f, t2, tl, rl))
+split(f, bot(), tl, rl) -> bot()
+split(f, t\(bot() + plus(t1,t2)), cons(u,tl), rl) -> split(f, collectPlus(u), tl, cons(t,rl))
+// split(f, appl(g, ul), cons(u,tl), rl) -> split(f, collectPlus(u), tl, cons(appl(g,ul),rl))
+// split(f, var(s), cons(u,tl), rl) -> split(f, collectPlus(u), tl, cons(var(s),rl))
+split(f, t\(bot() + plus(t1,t2)), nil(), rl) -> appl(f, reverse(rl, cons(t, nil())))
+// split(f, appl(g, ul), nil(), rl) -> appl(f, reverse(rl, cons(appl(g, ul), nil())))
+// split(f, var(s), nil(), rl) -> appl(f, reverse(rl, cons(var(s), nil())))
 
-removePlus(t) -> collectPlus(t, nil())
+collectPlus(plus(u1, u2)) -> add(collectPlus(u1),collectPlus(u2))
+collectPlus(appl(f, nil())) -> appl(f, nil())
+collectPlus(appl(f, cons(t, tl))) -> split(f, collectPlus(t), tl, nil())
+collectPlus(var(s)) -> var(s)
+collectPlus(bot()) -> bot()
 
-split(f, cons(t,l), nil(), rl) -> cons(appl(f, reverse(snoc(t, rl), nil())), split(f, l, nil(), rl))
-split(f, cons(t,l), tl, rl) -> concat(split(f,l,tl,rl), split(f, nil(), tl, snoc(t, rl)))
-split(f, nil(), cons(u,tl), rl) -> split(f, removePlus(u), tl, rl)
-split(f, nil(), nil(), rl) -> nil()
-
-collectPlus(plus(u1, u2), l) -> concat(collectPlus(u1, nil()), collectPlus(u2, l))
-collectPlus(appl(f, nil()), l) -> cons(appl(f,nil()), nil())
-collectPlus(appl(f, tl\nil()), l) -> concat(split(f, nil(), tl, lin()),l)
-collectPlus(var(s), l) -> cons(var(s),l)
-collectPlus(bot(), l) -> l
-
-reverse(snoc(t,rl), l) -> reverse(rl, cons(t,l))
-reverse(lin(), l) -> l
-
-concat(cons(u,l1), l2) -> cons(u,concat(l1,l2))
-concat(nil(), l) -> l
+reverse(cons(t,l), rl) -> reverse(l, cons(t, rl))
+reverse(nil(), rl) -> rl
