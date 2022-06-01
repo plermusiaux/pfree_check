@@ -647,23 +647,23 @@ otrs = "\
 \build(f, z(), l) -> appl(f, l)\n\
 \build(f, s(n), l) -> build(f, n, cons(var(name(n)), l))\n\
 \\n\
-\interleave(f, cons(u1,l1), cons(u2,l2), rl, sig) -> add(interleave(f, l1, nil(), cons(complement(sig, u1, u2), rl), sig), interleave(f, l1, l2, cons(u1,rl), sig))\n\
-\interleave(f, cons(u1,l1), nil(), rl, sig) -> interleave(f, l1, nil(), cons(u1,rl), sig)\n\
-\interleave(f, nil(), l2, cons(u, rl), sig) -> split(f, collectPlus(u), rl, nil())\n\
+\interleave(f, cons(u1,l1), cons(u2,l2), rl, sig) -> add(interleave(f, cons(complement(sig, u1, u2), l1), nil(), rl, sig), interleave(f, l1, l2, cons(u1,rl), sig))\n\
+\interleave(f, l1, nil(), cons(u, rl), sig) -> interleave(f, cons(u, l1), nil(), rl, sig)\n\
+\interleave(f, cons(u1, l1), nil(), nil(), sig) -> split(f, collectPlus(u1), l1, nil())\n\
 \interleave(f, nil(), l2, nil(), sig) -> bot()\n\
 \\n\
-\split(f, plus(t1,t2), tl, rl) -> add(split(f, t1, tl, rl), split(f, t2, tl, rl))\n\
-\split(f, bot(), tl, rl) -> bot()\n\
-\split(f, t\\(bot() + plus(t1,t2)), cons(u,tl), rl) -> split(f, collectPlus(u), tl, cons(t,rl))\n\
-\// split(f, appl(g, ul), cons(u,tl), rl) -> split(f, collectPlus(u), tl, cons(appl(g,ul),rl))\n\
-\// split(f, var(s), cons(u,tl), rl) -> split(f, collectPlus(u), tl, cons(var(s),rl))\n\
+\split(f, plus(t1,t2), ul, rl) -> add(split(f, t1, ul, rl), split(f, t2, ul, rl))\n\
+\split(f, bot(), ul, rl) -> bot()\n\
+\split(f, t\\(bot() + plus(t1,t2)), cons(u, ul), rl) -> split(f, collectPlus(u), ul, cons(t,rl))\n\
+\// split(f, appl(g, ul), cons(u,ul), rl) -> split(f, collectPlus(u), ul, cons(appl(g,ul),rl))\n\
+\// split(f, var(s), cons(u,ul), rl) -> split(f, collectPlus(u), ul, cons(var(s),rl))\n\
 \split(f, t\\(bot() + plus(t1,t2)), nil(), rl) -> appl(f, reverse(rl, cons(t, nil())))\n\
 \// split(f, appl(g, ul), nil(), rl) -> appl(f, reverse(rl, cons(appl(g, ul), nil())))\n\
 \// split(f, var(s), nil(), rl) -> appl(f, reverse(rl, cons(var(s), nil())))\n\
 \\n\
 \collectPlus(plus(u1, u2)) -> add(collectPlus(u1),collectPlus(u2))\n\
 \collectPlus(appl(f, nil())) -> appl(f, nil())\n\
-\collectPlus(appl(f, cons(t, tl))) -> split(f, collectPlus(t), tl, nil())\n\
+\collectPlus(appl(f, cons(u, ul))) -> split(f, collectPlus(u), ul, nil())\n\
 \collectPlus(var(s)) -> var(s)\n\
 \collectPlus(bot()) -> bot()\n\
 \\n\
