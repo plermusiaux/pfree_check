@@ -1,15 +1,3 @@
-import Datatypes 
-import FreeCheck
-import Parser
-
-import Data.Maybe (fromJust)
-
-import Examples (flatten1, flatten_fail, flatten2, negativeNF,
-                 removePlus0_fail, removePlus0, skolemization,
-                 non_linear,
-                 delete, insertionSort, mergeSort, multiply0,
-                 reverse, reverseTwice)
-
 import Control.Monad.IO.Class ()
 import Control.Concurrent.MVar ()
 import GHCJS.DOM (currentDocumentUnchecked)
@@ -28,24 +16,36 @@ import qualified GHCJS.DOM.HTMLTextAreaElement as TextArea
        (setValue, getValue)
 import qualified GHCJS.DOM.HTMLSelectElement as Select (setValue, getValue)
 
-import Data.Map (Map, foldlWithKey)
+
 import Data.List (concatMap)
+import Data.Map (Map, foldlWithKey)
+import Data.Maybe (fromJust)
+
+
+import Datatypes 
+import FreeCheck
+import Parser
+
+import Examples
 
 examples =
   [ ("flatten1", flatten1),
     ("flatten_fail", flatten_fail),
     ("flatten2", flatten2),
+    ("flatten3", flatten3),
     ("negativeNF", negativeNF),
+    ("skolemization", skolemization),
     ("removePlus0_fail", removePlus0_fail),
     ("removePlus0", removePlus0),
-    ("skolemization", skolemization),
+    ("multiply0", multiply0),
     ("non_linear", non_linear),
-    ("delete", delete),
     ("insertionSort", insertionSort),
     ("mergeSort", mergeSort),
-    ("multiply0", multiply0),
     ("reverse", Examples.reverse),
-    ("reverseTwice", reverseTwice)
+    ("reverseTwice", reverseTwice),
+    ("delete", delete),
+    ("sortedDelete", sortedDelete),
+    ("otrs", otrs)
   ]
 
 parseResult :: Signature -> Map Rule (Term,[Term]) -> String
@@ -55,11 +55,11 @@ parseResult sig map
   where accuParse s r (p,ts) = s ++ "\n\n" ++ show r ++ (concatMap (parseFail r p) ts)
         parseFail r p t = "\n" ++ show t ++ " is not " ++ show p ++ "-free"
 
-run :: String -> String
-run s =
+run :: Flag -> String -> String
+run flag s =
   case parseModule "text area" s of
     Left err -> show err
-    Right (Module sig trs) -> parseResult sig (checkTRS Default sig trs)
+    Right (Module sig trs) -> parseResult sig (checkTRS flag sig trs)
 
 main = do
   doc <- currentDocumentUnchecked
@@ -69,12 +69,26 @@ main = do
   checkButton <-
     unsafeCastTo HTMLButtonElement =<<
     getElementByIdUnsafe doc "check-button"
+  checkLinearButton <-
+    unsafeCastTo HTMLButtonElement =<<
+    getElementByIdUnsafe doc "check-linear-button"
+  checkStrictButton <-
+    unsafeCastTo HTMLButtonElement =<<
+    getElementByIdUnsafe doc "check-strict-button"
   exampleSelector <-
     unsafeCastTo HTMLSelectElement =<<
     getElementByIdUnsafe doc "example-selector"
   on checkButton click $
     do inputText <- TextArea.getValue inputArea
-       setInnerHTML outputArea (run inputText)
+       setInnerHTML outputArea (run Default inputText)
+       return ()
+  on checkLinearButton click $
+    do inputText <- TextArea.getValue inputArea
+       setInnerHTML outputArea (run Linearized inputText)
+       return ()
+  on checkStrictButton click $
+    do inputText <- TextArea.getValue inputArea
+       setInnerHTML outputArea (run Strict inputText)
        return ()
   on exampleSelector change $
     do name <- Select.getValue exampleSelector

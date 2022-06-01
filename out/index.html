@@ -29,6 +29,9 @@
         left: 2px;
         width: 98.5%;
       }
+      #output-area:empty {
+        display: none;
+      }
       .fadein{animation:opac 1s}@keyframes opac{from{opacity:0} to{opacity:1}}
     </style>
     <script src="all.js"></script>
@@ -40,19 +43,24 @@
           <option value="flatten1">flatten1</option>
           <option value="flatten_fail">flatten_fail</option>
           <option value="flatten2">flatten2</option>
-          <option value="removePlus0_fail">removePlus0_fail</option>
-          <option value="removePlus0">removePlus0</option>
+          <option value="flatten3">flatten3</option>
           <option value="negativeNF">negativeNF</option>
           <option value="skolemization">skolemization</option>
+          <option value="removePlus0_fail">removePlus0_fail</option>
+          <option value="removePlus0">removePlus0</option>
+          <option value="multiply0">multiply0</option>
           <option value="non_linear">non_linear</option>
-          <option value="delete">delete</option>
           <option value="insertionSort">insertionSort</option>
           <option value="mergeSort">mergeSort</option>
-          <option value="multiply0">multiply0</option>
           <option value="reverse">reverse</option>
           <option value="reverseTwice">reverseTwice</option>
+          <option value="delete">delete</option>
+          <option value="sortedDelete">sortedDelete</option>
+          <option value="otrs">otrs</option>
       </select>
       <button id="check-button">Check</button>
+      <button id="check-linear-button">Linear check</button>
+      <button id="check-strict-button">Strict check</button>
       <div>(Please wait for the page to load: the first example should appear in the area below)</div>
       <textarea rows="42" id="input-area" spellcheck="false"></textarea>
     </div>
@@ -63,14 +71,25 @@
       </code>
     </div>
     <script>
-      var div = document.getElementById("output-area");
-      var btn = document.getElementById("check-button");
-      btn.addEventListener("click", function(){
-        console.log("Fade!");
-        div.classList.add("fadein");
-        // Wait until the animation is over and then remove the class, so that
-        // the next click can re-add it.
-        setTimeout(function(){div.classList.remove("fadein");}, 1000);
+      const output = document.getElementById("output-area");
+      const btnList = [ document.getElementById("check-button"),
+                        document.getElementById("check-linear-button"),
+                        document.getElementById("check-strict-button") ];
+      const input = [ document.getElementById("example-selector"),
+                      document.getElementById("input-area") ];
+      btnList.forEach(btn => {
+        btn.addEventListener("click", function(){
+          console.log("Fade!");
+          output.classList.add("fadein");
+          // Wait until the animation is over and then remove the class, so that
+          // the next click can re-add it.
+          setTimeout(function(){output.classList.remove("fadein");}, 1000);
+        });
+      });
+      input.forEach(e => {
+        e.addEventListener("input", function(){
+          output.innerText = "";
+        });
       });
     </script>
   </body>
