@@ -1,4 +1,4 @@
-#Implementation of a method to verify pattern elimination in Constructor based Term Rewrite Systems
+# Implementation of a method to verify pattern elimination in Constructor based Term Rewrite Systems
 
 For more details, please see the papers presented at:
 <ul>
@@ -6,12 +6,12 @@ For more details, please see the papers presented at:
   <li><a href="https://hal.inria.fr/hal-03528254">PPDP 2021</a></li>
 </ul>
 
-##Compilation instruction:
+## Compilation instruction:
 ```console
 $ ghc Main
 ```
 
-##Execution instruction:
+## Execution instruction:
 The execution take a path towards a file to parse and analyze
 ```console
 $ ./Main example_file
