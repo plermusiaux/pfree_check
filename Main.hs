@@ -41,6 +41,6 @@ main = do
   case parseModule filename s of
     Left err               -> putStrLn (show err)
     Right (Module sig trs) -> if elem NonLinear flags
-                              then print $ checkTRSnl sig trs
-                              else print $ checkTRS (head flags) sig trs
+                              then print =<< checkTRSnl sig trs
+                              else print =<< checkTRS (head flags) sig trs
 

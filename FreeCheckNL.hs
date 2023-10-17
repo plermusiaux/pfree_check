@@ -5,8 +5,6 @@ module FreeCheckNL ( checkTRSnl, checkPfreeNL ) where
 import Control.Arrow ( left )
 import Control.Monad ( foldM )
 
-import Debug.Trace
-
 import Data.List ( isSubsequenceOf )
 import Data.Either
 import Data.Maybe
@@ -80,41 +78,44 @@ complementC sig c0 t1 t2 = comp c0 t1 t2
     conj c (Alias x u) p = (c, alias x (conjunction sig u p))                 --L4
     buildVar q s = AVar NoName (AType s q)
     accuConj _ (ci, Nothing) = (ci, Nothing)
-    accuConj (pi, qi) (ci, Just ts)
-      | isBottom ti = (c', Nothing)
-      | otherwise   = (c', Just (ti:ts))
-      where (c', ti) = conj ci pi qi
+    accuConj (pi, qi) (ci, Just ts) = case conj ci pi qi of
+      (c', Bottom) -> (c', Nothing)
+      (c', ti)     -> (c', Just (ti:ts))
 
 -------------------------------------------------------------------------------
 
 
 -- check TRS : call checkRule for each rule and concatenate the results
 -- return a map of failed rule with the terms that do not satisfy the expected pattern-free property
-checkTRSnl :: Signature -> [Rule] -> M.Map Rule (Term,Term)
-checkTRSnl sig rules = snd (foldl accuCheck (emptyCache, M.empty) rules)
+checkTRSnl :: Signature -> [Rule] -> IO (M.Map Rule (Term,Term))
+checkTRSnl sig rules = snd <$> foldM accuCheck (emptyCache, M.empty) rules
   where nSig = normalizeSig sig
-        accuCheck (c, m) rule
-          | null fails = (c', m)
-          | otherwise  = (c', M.union m fails)
-          where (c', fails) = checkRule nSig c rule
+        accuCheck (c, m) rule = do
+          (c', fails) <- checkRule nSig c rule
+          if null fails then return (c', m)
+          else return (c', M.union m fails)
 
 -- check rule : for each profile of the head function symbol of the left hand side,
 -- alias the variables in the right hand side and build its semantics equivalent,
 -- then check that the term obtained verifies the corresponding pattern-free property.
 -- return a list of terms that do not satisfy the expected pattern-free properties
-checkRule :: Signature -> Cache -> Rule -> (Cache, M.Map Rule (Term,Term))
-checkRule sig c0 r = foldl accuCheck (c0, M.empty) $ inferRules sig r
-  where accuCheck (c, m) (Rule lhs rhs, p)
-          | isBottom ct = (c', m)
-          | otherwise   = (c', M.insert (Rule lhs rhs) (p, ct) m)
-          where (c', ct) = trace ("checking RULE " ++ show (Rule lhs rhs)) $ checkPfree sig c (rhs, p)
+checkRule :: Signature -> Cache -> Rule -> IO (Cache, M.Map Rule (Term,Term))
+checkRule sig c0 r = foldM accuCheck (c0, M.empty) $ inferRules sig r
+  where accuCheck (c, m) (Rule lhs rhs, p) = do
+          putStr "checking RULE "; print (Rule lhs rhs)
+          (c', ct) <- checkPfree sig c (rhs, p)
+          case ct of
+            Bottom -> return (c', m)
+            _      -> return (c', M.insert (Rule lhs rhs) (p, ct) m)
 
 -- check that a term is p-free
 -- parameters: Signature, Pattern p (should be a sum of constructor patterns), Rhs term of a rule (should be a qsymb)
 -- return Bottom if true, a counter-example otherwise
-checkPfree :: Signature -> Cache -> (Term, Term) -> (Cache, Term)
-checkPfree _ c0 (t0, Bottom) = (c0, t0)
-checkPfree sig c0 (t0, p0) = trace ("checking " ++ show p0 ++ "-free: " ++ show t0) $ instantiate sig checkMap t0
+checkPfree :: Signature -> Cache -> (Term, Term) -> IO (Cache, Term)
+checkPfree _ c0 (t0, Bottom) = return (c0, t0)
+checkPfree sig c0 (t0, p0) = do
+    putStr "checking "; putStr $ show p0; putStr "-free: "
+    instantiate sig checkMap t0 <$ print t0
   where checkMap = either id (,BotMap) $ recCheck c0 t0 [p0] (VarMap M.empty) S.empty
         convert fSet x@(AVar _ _)  = (fSet, x)
         convert fSet a@(Alias _ _) = (fSet, a)
@@ -220,8 +221,8 @@ getCheckMap sig (Compl v@(AVar x _) q) r = checkInsert sig x (v, collect q) r
 
 
 -- using a local cache seems to be more efficient than the no cache version below
-checkPfreeNL :: Signature -> (Term, Term) -> Bool
-checkPfreeNL sig = isBottom . snd . (checkPfree sig emptyCache)
+checkPfreeNL :: Signature -> (Term, Term) -> IO Bool
+checkPfreeNL sig tp = isBottom . snd <$> checkPfree sig emptyCache tp
 
 -- complementA :: Signature -> Term -> Term -> Term
 -- complementA sig p1 p2 = p1 \\ p2
@@ -458,10 +459,9 @@ powerConj :: Signature -> [Term] -> [([Term], Term)]
 powerConj sig ql = foldr accuConj [] ql
   where accuConj q [] = [([q], q)]
         accuConj q l0 = ([q], q):foldr conjQ l0 l0
-          where conjQ (ql, t) l
-                  | isBottom txq = l
-                  | otherwise    = (q:ql, txq):l
-                  where txq = conjunction sig t q
+          where conjQ (ql, t) l = case conjunction sig t q of
+                  Bottom -> l
+                  txq    -> (q:ql, txq):l
 
 -- pQ must be a list of pairs (ql, x) where x is the conjunction of ql
 -- and all terms of q0 in ql are in the same order (q0 and ql are 2 sublists of a bigger one)

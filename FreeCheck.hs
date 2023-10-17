@@ -1,9 +1,8 @@
 module FreeCheck (checkTRS, Flag(..)) where
 
-import Debug.Trace
-
 import Control.Monad ( foldM, liftM )
 import Data.Either
+import Data.Foldable ( foldrM )
 import Data.Maybe
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -28,58 +27,64 @@ data Flag = Default
 ------------------------------------------------------------------------------
 
 -- return the semantics equivalent of a term
-buildEqui :: Flag -> Signature -> Cache -> Term -> (Cache, Term)
-buildEqui flag sig c0 t@(Appl f ts)
-  | isFunc sig f = (c2, AVar x (AType (range sig f) p))
-  | otherwise    = (c1, Appl f equis)
-  where (c1, equis) = foldr buildSub (c0, []) ts
-        buildSub t (cache, l) = (cache', t':l)
-          where (cache', t') = buildEqui flag sig cache t
-        (c2, p) = foldl accuCheck (c1, Bottom) (profile sig f)
-        accuCheck (cache, p) (qs, q) = case foldM subCheck cache (zip equis qs) of
-          Right cache' -> (cache', plus p q)
-          Left cache'  -> (cache', p)
-        subCheck cache tp
-          | null fails = Right cache' -- t is p-free
-          | otherwise  = Left cache'  -- t is not p-free, stop subCheck computation
-          where (cache', fails) = checkPfree flag sig cache tp
+buildEqui :: Flag -> Signature -> Cache -> Term -> IO (Cache, Term)
+buildEqui flag sig c0 t@(Appl f ts) = do
+  (c1, equis) <- foldrM buildSub (c0, []) ts
+  if isFunc sig f then do
+    (c2, p) <- foldM (accuCheck equis) (c1, Bottom) (profile sig f)
+    return (c2, AVar x (AType (range sig f) p))
+  else return (c1, Appl f equis)
+  where buildSub t (cache, l) = (\(c', t') -> (c', t':l)) <$> buildEqui flag sig cache t
+        accuCheck equis (cache, p) (qs, q) = do
+          (cache', b) <- subCheck cache (zip equis qs)
+          if b then return (cache', plus p q)
+          else return (cache', p)
+        subCheck cache [] = return (cache, True)
+        subCheck cache (tp:l) = do
+          (cache', fails) <- checkPfree flag sig cache tp
+          if null fails then subCheck cache' l  -- t is p-free
+          else return (cache', False)           -- t is not p-free, stop subCheck computation
         x = case flag of Strict -> NoName
                          _      -> (VarName (show t))
-buildEqui _ _ c t = (c, t)
+buildEqui _ _ c t = return (c, t)
 
 ------------------------------------------------------------------------------
 
 -- check TRS : call checkRule for each rule and concatenate the results
 -- return a map of failed rule with the terms that do not satisfy the expected pattern-free property
-checkTRS :: Flag -> Signature -> [Rule] -> M.Map Rule (Term,[Term])
-checkTRS flag sig rules = snd (foldl accuCheck (emptyCache, M.empty) rules)
+checkTRS :: Flag -> Signature -> [Rule] -> IO (M.Map Rule (Term,[Term]))
+checkTRS flag sig rules = snd <$> foldM accuCheck (emptyCache, M.empty) rules
   where nSig = normalizeSig sig
-        accuCheck (c, m) rule
-          | null fails = (c', m)
-          | otherwise  = (c', M.union m fails)
-          where (c', fails) = checkRule flag nSig c rule
+        accuCheck (c, m) rule = do
+          (c', fails) <- checkRule flag nSig c rule
+          if null fails then return (c', m)
+          else return (c', M.union m fails)
 
 -- check rule : for each profile of the head function symbol of the left hand side,
 -- alias the variables in the right hand side and build its semantics equivalent,
 -- then check that the term obtained verifies the corresponding pattern-free property.
 -- return a list of terms that do not satisfy the expected pattern-free properties
-checkRule :: Flag -> Signature -> Cache -> Rule -> (Cache, M.Map Rule (Term,[Term]))
-checkRule Default sig c r = foldl accuCheck (c, M.empty) $ inferRules sig r
-  where accuCheck (cache, m) (Rule lhs rhs, p)
-          | isFLinear sig rhs = if null fails
-                                then (cache2, m)
-                                else (cache2, M.insert (Rule lhs equi) (p,fails) m)
-          | nlcheck           = (cache, m)
-          | otherwise         = (cache, M.insert (Rule lhs rhs) (p, [rhs]) m)
-          where (cache1, equi) = buildEqui Default sig cache rhs
-                (cache2, fails) = trace ("checking RULE " ++ show (Rule lhs equi)) $ checkPfree Default sig cache1 (equi,p)
-                nlcheck = trace ("checking NL RULE " ++ show (Rule lhs rhs)) $ checkPfreeNL sig (rhs, p)
-checkRule flag sig c r = foldl accuCheck (c, M.empty) $ inferRules sig r
-  where accuCheck (cache, m) (Rule lhs rhs, p)
-          | null fails = (cache2, m)
-          | otherwise  = (cache2, M.insert (Rule lhs equi) (p,fails) m)
-          where (cache1, equi) = buildEqui flag sig cache rhs
-                (cache2, fails) = trace ("checking RULE " ++ show (Rule lhs equi)) $ checkPfree flag sig cache1 (equi,p)
+checkRule :: Flag -> Signature -> Cache -> Rule -> IO (Cache, M.Map Rule (Term,[Term]))
+checkRule Default sig c r = foldM accuCheck (c, M.empty) $ inferRules sig r
+  where accuCheck (cache, m) (Rule lhs rhs, p) =
+          if isFLinear sig rhs then do
+            (cache1, equi) <- buildEqui Default sig cache rhs
+            putStr "checking RULE "; print (Rule lhs equi)
+            (cache2, fails) <- checkPfree Default sig cache1 (equi,p)
+            if null fails then return (cache2, m)
+            else return (cache2, M.insert (Rule lhs equi) (p,fails) m)
+          else do
+            putStr "checking RULE "; print (Rule lhs rhs)
+            b <- checkPfreeNL sig (rhs, p)
+            if b then return (cache, m)
+            else return (cache, M.insert (Rule lhs rhs) (p, [rhs]) m)
+checkRule flag sig c r = foldM accuCheck (c, M.empty) $ inferRules sig r
+  where accuCheck (cache, m) (Rule lhs rhs, p) = do
+          (cache1, equi) <- buildEqui flag sig cache rhs
+          putStr "checking RULE "; print (Rule lhs equi)
+          (cache2, fails) <- checkPfree flag sig cache1 (equi,p)
+          if null fails then return (cache2, m)
+          else return (cache2, M.insert (Rule lhs equi) (p,fails) m)
 
 -- check that a Term has no shared variable in different parameters of
 -- a function symbol
@@ -102,33 +107,47 @@ isFLinear sig t0 = isJust (getOKVar t0)
 -- check that a term is p-free
 -- parameters: Signature, Pattern p (should be a sum of constructor patterns), Rhs term of a rule (should be a qsymb)
 -- return a list of terms that do not satisfy the expected pattern-free property
-checkPfree :: Flag -> Signature -> Cache -> (Term, Term) -> (Cache, [Term])
-checkPfree flag _ c0 (_, Bottom) = (c0, [])
+checkPfree :: Flag -> Signature -> Cache -> (Term, Term) -> IO (Cache, [Term])
+checkPfree flag _ c0 (_, Bottom) = return (c0, [])
 checkPfree flag sig c0 (t, p) = accuCheck (c0, []) t
   where accuCheck (c@(Cache m), l) u@(Appl _ ts) = case M.lookup (u,p) m of
-          Just res -> (c, res ++ l)
-          Nothing | check flag sig p u -> (Cache (M.insert (u, p) lSub mSub), lSub ++ l)
-                  | otherwise        -> (Cache (M.insert (u, p) (u:lSub) mSub), u:(lSub ++ l))
-                  where (Cache mSub, lSub) = foldl accuCheck (c,[]) ts
+          Just res -> return (c, res ++ l)
+          Nothing  -> do
+            b <- check flag sig p u
+            (Cache mSub, lSub) <- foldM accuCheck (c,[]) ts
+            if b then return (Cache (M.insert (u, p) lSub mSub), lSub ++ l)
+            else return (Cache (M.insert (u, p) (u:lSub) mSub), u:(lSub ++ l))
         accuCheck (c@(Cache m), l) u@(AVar _ s) = case M.lookup (u',p) m of
-          Just res -> trace ("checked AVar " ++ show u) (c, res ++ l)
-          Nothing | all (check flag sig p) reachables -> (Cache (M.insert (u', p) [] m), l)
-                  | otherwise                    -> (Cache (M.insert (u', p) [u'] m), u':l)
-                  where reachables = trace ("checking AVar " ++ show u) $ getReachable sig s S.empty
+          Just res -> do
+            putStr "checked AVar "; print u
+            return (c, res ++ l)
+          Nothing -> do
+            putStr "checking AVar "; print u
+            b <- foldr checkAll (pure True) $ getReachable sig s S.empty
+            if b then return (Cache (M.insert (u', p) [] m), l)
+            else return (Cache (M.insert (u', p) [u'] m), u':l)
           where u' = AVar NoName s
         accuCheck (c@(Cache m), l) u@(Compl (AVar _ s) r) = case M.lookup (u',p) m of
-          Just res -> (c, res ++ l)
-          Nothing | all (check flag sig p) reachables -> (Cache (M.insert (u', p) [] m), l)
-                  | otherwise                    -> (Cache (M.insert (u', p) [u'] m), u':l)
-                  where reachables = trace ("checking Compl " ++ show u) $ getReachable sig s (removePlusses r)
+          Just res -> return (c, res ++ l)
+          Nothing -> do
+            putStr "checking Compl "; print u
+            b <- foldr checkAll (pure True) $ getReachable sig s (removePlusses r)
+            if b then return (Cache (M.insert (u', p) [] m), l)
+            else return  (Cache (M.insert (u', p) [u'] m), u':l)
           where u' = Compl (AVar NoName s) r
         accuCheck (c, l) (Alias _ u) = accuCheck (c, l) u
+        checkAll u mb = do
+          b <- check flag sig p u
+          if b then mb else return False
 
 -- check that t X p reduces to Bottom
 -- with t a qaddt term and p a sum of constructor patterns
-check :: Flag -> Signature -> Term -> Term -> Bool
-check _ _ Bottom _ = True
-check flag sig p t = trace ("checking if BOTTOM: " ++ show t ++ " X " ++ show p) $ checkConj (conjunction sig t p)
+check :: Flag -> Signature -> Term -> Term -> IO Bool
+check _ _ Bottom _ = return True
+check flag sig p t = do
+    putStr "checking if BOTTOM: "
+    putStr $ show t; putStr " X "; print p
+    return $ checkConj (conjunction sig t p)
   where checkConj Bottom = True
         checkConj t = case flag of
           Linearized -> False
