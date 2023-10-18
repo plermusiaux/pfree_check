@@ -89,7 +89,8 @@ instance PrintfArg VarName where
   formatArg _ fmt = errorBadFormat $ fmtChar fmt
 
 instance Show VarName where
-  show = printf "%v"
+  show (VarName s) = s
+  show NoName = "_"
 
 instance PrintfArg FunName where
   formatArg (FunName name) fmt
