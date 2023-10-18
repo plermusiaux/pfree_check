@@ -29,6 +29,8 @@ import Data.List ( intercalate )
 import Data.Maybe ( fromJust )
 import Data.String ( IsString(..) )
 
+import Text.Printf
+
 {- Datatypes -}
 
 data VarName = VarName String
@@ -67,49 +69,98 @@ data Module = Module Signature [Rule]
 
 {- Pretty Printing -}
 
+type FormatA a = (a -> FieldFormatter, a)
+
+instance PrintfArg (FormatA a) where
+  formatArg (f, x) fmt | fmtChar fmt == 'a' = f x (fmt { fmtChar = 'v' })
+  formatArg _ fmt = errorBadFormat $ fmtChar fmt
+
+formatList :: (a -> FieldFormatter) -> String -> [a] -> FormatA [a]
+formatList f sep = (format,)
+  where format [] fmt = id
+        format [x] fmt = f x fmt
+        format (x:xs) fmt = printf "%a%s%a%s" (f, x) sep (format, xs)
+
+instance PrintfArg VarName where
+  formatArg x fmt | fmtChar fmt == 'v' =
+    case x of
+      VarName s -> formatString s fmt
+      NoName    -> formatString "_" fmt
+  formatArg _ fmt = errorBadFormat $ fmtChar fmt
+
 instance Show VarName where
-  show (VarName x) = x
-  show NoName = "_"
+  show = printf "%v"
+
+instance PrintfArg FunName where
+  formatArg (FunName name) fmt
+    | fmtChar fmt == 'v' = formatString name fmt
+  formatArg _ fmt = errorBadFormat $ fmtChar fmt
 
 instance Show FunName where
-  show (FunName x) = x
+  show (FunName name) = name
+
+instance PrintfArg TypeName where
+  formatArg (TypeName ty) fmt
+    | fmtChar fmt == 'v' = formatString ty fmt
+  formatArg _ fmt = errorBadFormat $ fmtChar fmt
 
 instance Show TypeName where
   show (TypeName ty) = ty
 
-instance Show AType where
-  show (AType s Bottom) = show s
-  show (AType s p) = show s ++ "[-" ++ show p ++ "]"
-  show Unknown = []
+instance PrintfArg AType where
+  formatArg ty fmt | fmtChar fmt == 'v' =
+    case ty of
+      AType s Bottom -> formatArg s fmt
+      AType s p      -> printf "%v[-%v]%s" s p
+      Unknown        -> id
+  formatArg _ fmt = errorBadFormat $ fmtChar fmt
 
-parSep :: [String] -> String
-parSep ss = "(" ++ intercalate ", " ss ++ ")"
+instance Show AType where
+  show = printf "%v"
+
+instance PrintfArg Constructor where
+  formatArg (Constructor f tys ty) fmt | fmtChar fmt == 'v' =
+    printf "%v: %v -> %a%s" f (formatList formatArg " * " tys) ty
+  formatArg _ fmt = errorBadFormat $ fmtChar fmt
 
 instance Show Constructor where
-  show (Constructor f tys ty) = show f ++ ": " ++ intercalate " * " (map show tys) ++ " -> " ++ show ty
+  show = printf "%v"
+
+instance PrintfArg Function where
+  formatArg (Function f d r pr) fmt | fmtChar fmt == 'v' =
+    printf "%v: %a%s" f (formatList profile " | " pr)
+    where profile (qs, p) _ = printf "%a -> %v%s" (formatList formatArg " * " qs) p
+  formatArg _ fmt = errorBadFormat $ fmtChar fmt
 
 instance Show Function where
-  show (Function f d r pr) = show f ++ ": " ++ intercalate " | " profiles
-    where profiles = map showProfile pr
-          showProfile (qs, p) = intercalate " * " (map show (zipWith AType d qs)) ++ " -> " ++ show (AType r p)
+  show = printf "%v"
 
 instance Show Signature where
   show (Signature ctors funs) = show (ctors, funs)
 
-instance Show Term where
-  show (Appl f ps) = show f ++ parSep (map show ps)
-  show (Plus p1 p2) = "(" ++ show p1 ++ " + " ++ show p2 ++ ")"
-  show (Compl p1 p2) = "(" ++ show p1 ++ " \\ " ++ show p2 ++ ")"
-  show (Alias x p) = show x ++ "@" ++ show p
-  show (Anti p) = "!" ++ show p
-  show Bottom = "⊥"
-  show (AVar x s) = case s of
-    Unknown -> show x
-    _       -> show x ++ " : " ++ show s
+instance PrintfArg Term where
+  formatArg t fmt | fmtChar fmt == 'v' =
+    case t of
+      Appl f ps      -> printf "%v(%a)%s" f (formatList formatArg ", " ps)
+      Plus p1 p2     -> printf "(%v + %v)%s" p1 p2
+      Compl p1 p2    -> printf "(%v \\ %v)%s" p1 p2
+      Alias x p      -> printf "%v@%v%s" x p
+      Anti p         -> printf "!%v%s" p
+      Bottom         -> formatChar '⊥' fmt
+      AVar x Unknown -> formatArg x fmt
+      AVar x s       -> printf "%v : %v%s" x s
+  formatArg _ fmt = errorBadFormat $ fmtChar fmt
 
+instance Show Term where
+  show = printf "%v"
+
+instance PrintfArg Rule where
+  formatArg (Rule lhs rhs) fmt | fmtChar fmt == 'v' =
+    printf "%v -> %v%s" lhs rhs
+  formatArg _ fmt = errorBadFormat $ fmtChar fmt
 
 instance Show Rule where
-  show (Rule lhs rhs) = show lhs ++ " -> " ++ show rhs
+  show = printf "%v"
 
 {- IsString instances -}
 

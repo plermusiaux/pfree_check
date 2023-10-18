@@ -6,6 +6,7 @@ import Data.Foldable ( foldrM )
 import Data.Maybe
 import qualified Data.Map as M
 import qualified Data.Set as S
+import Text.Printf ( printf )
 
 import AlgoUtils ( isBottom, plus, removePlusses )
 import Datatypes
@@ -69,19 +70,19 @@ checkRule Default sig c r = foldM accuCheck (c, M.empty) $ inferRules sig r
   where accuCheck (cache, m) (Rule lhs rhs, p) =
           if isFLinear sig rhs then do
             (cache1, equi) <- buildEqui Default sig cache rhs
-            putStr "checking RULE "; print (Rule lhs equi)
+            printf "checking RULE %v\n" (Rule lhs equi)
             (cache2, fails) <- checkPfree Default sig cache1 (equi,p)
             if null fails then return (cache2, m)
             else return (cache2, M.insert (Rule lhs equi) (p,fails) m)
           else do
-            putStr "checking RULE "; print (Rule lhs rhs)
+            printf "checking RULE %v\n" (Rule lhs rhs)
             b <- checkPfreeNL sig (rhs, p)
             if b then return (cache, m)
             else return (cache, M.insert (Rule lhs rhs) (p, [rhs]) m)
 checkRule flag sig c r = foldM accuCheck (c, M.empty) $ inferRules sig r
   where accuCheck (cache, m) (Rule lhs rhs, p) = do
           (cache1, equi) <- buildEqui flag sig cache rhs
-          putStr "checking RULE "; print (Rule lhs equi)
+          printf "checking RULE %v\n" (Rule lhs equi)
           (cache2, fails) <- checkPfree flag sig cache1 (equi,p)
           if null fails then return (cache2, m)
           else return (cache2, M.insert (Rule lhs equi) (p,fails) m)
@@ -118,11 +119,9 @@ checkPfree flag sig c0 (t, p) = accuCheck (c0, []) t
             if b then return (Cache (M.insert (u, p) lSub mSub), lSub ++ l)
             else return (Cache (M.insert (u, p) (u:lSub) mSub), u:(lSub ++ l))
         accuCheck (c@(Cache m), l) u@(AVar _ s) = case M.lookup (u',p) m of
-          Just res -> do
-            putStr "checked AVar "; print u
-            return (c, res ++ l)
+          Just res -> (c, res ++ l) <$ printf "checked AVar %v\n" u
           Nothing -> do
-            putStr "checking AVar "; print u
+            printf "checking AVar %v\n" u
             b <- foldr checkAll (pure True) $ getReachable sig s S.empty
             if b then return (Cache (M.insert (u', p) [] m), l)
             else return (Cache (M.insert (u', p) [u'] m), u':l)
@@ -130,12 +129,12 @@ checkPfree flag sig c0 (t, p) = accuCheck (c0, []) t
         accuCheck (c@(Cache m), l) u@(Compl (AVar _ s) r) = case M.lookup (u',p) m of
           Just res -> return (c, res ++ l)
           Nothing -> do
-            putStr "checking Compl "; print u
+            printf "checking Compl %v\n" u
             b <- foldr checkAll (pure True) $ getReachable sig s (removePlusses r)
             if b then return (Cache (M.insert (u', p) [] m), l)
             else return  (Cache (M.insert (u', p) [u'] m), u':l)
           where u' = Compl (AVar NoName s) r
-        accuCheck (c, l) (Alias _ u) = accuCheck (c, l) u
+        accuCheck cl (Alias _ u) = accuCheck cl u
         checkAll u mb = do
           b <- check flag sig p u
           if b then mb else return False
@@ -144,10 +143,8 @@ checkPfree flag sig c0 (t, p) = accuCheck (c0, []) t
 -- with t a qaddt term and p a sum of constructor patterns
 check :: Flag -> Signature -> Term -> Term -> IO Bool
 check _ _ Bottom _ = return True
-check flag sig p t = do
-    putStr "checking if BOTTOM: "
-    putStr $ show t; putStr " X "; print p
-    return $ checkConj (conjunction sig t p)
+check flag sig p t =
+  checkConj (conjunction sig t p) <$ printf "checking if BOTTOM: %v X %v\n" t p
   where checkConj Bottom = True
         checkConj t = case flag of
           Linearized -> False

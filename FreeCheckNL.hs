@@ -10,6 +10,7 @@ import Data.Either
 import Data.Maybe
 import qualified Data.Map as M
 import qualified Data.Set as S
+import Text.Printf ( printf )
 
 import AlgoUtils
 import Datatypes
@@ -102,7 +103,7 @@ checkTRSnl sig rules = snd <$> foldM accuCheck (emptyCache, M.empty) rules
 checkRule :: Signature -> Cache -> Rule -> IO (Cache, M.Map Rule (Term,Term))
 checkRule sig c0 r = foldM accuCheck (c0, M.empty) $ inferRules sig r
   where accuCheck (c, m) (Rule lhs rhs, p) = do
-          putStr "checking RULE "; print (Rule lhs rhs)
+          printf "checking RULE %v\n" (Rule lhs rhs)
           (c', ct) <- checkPfree sig c (rhs, p)
           case ct of
             Bottom -> return (c', m)
@@ -113,9 +114,8 @@ checkRule sig c0 r = foldM accuCheck (c0, M.empty) $ inferRules sig r
 -- return Bottom if true, a counter-example otherwise
 checkPfree :: Signature -> Cache -> (Term, Term) -> IO (Cache, Term)
 checkPfree _ c0 (t0, Bottom) = return (c0, t0)
-checkPfree sig c0 (t0, p0) = do
-    putStr "checking "; putStr $ show p0; putStr "-free: "
-    instantiate sig checkMap t0 <$ print t0
+checkPfree sig c0 (t0, p0) =
+  instantiate sig checkMap t0 <$ printf "checking %v-free: %v\n" p0 t0
   where checkMap = either id (,BotMap) $ recCheck c0 t0 [p0] (VarMap M.empty) S.empty
         convert fSet x@(AVar _ _)  = (fSet, x)
         convert fSet a@(Alias _ _) = (fSet, a)
