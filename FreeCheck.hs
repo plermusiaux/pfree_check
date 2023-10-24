@@ -1,6 +1,6 @@
 module FreeCheck (checkTRS, Flag(..)) where
 
-import Control.Monad ( foldM, liftM )
+import Control.Monad ( foldM )
 import Data.Either
 import Data.Foldable ( foldrM )
 import Data.Maybe
@@ -98,7 +98,7 @@ isFLinear sig t0 = isJust (getOKVar t0)
           | (isFunc sig f) && not (checkInter vts) = Nothing
           | otherwise                              = uVar
           where vts = map getOKVar ts
-                uVar = foldM (liftM . S.union) S.empty vts
+                uVar = foldM (fmap . S.union) S.empty vts
                 checkInter [] = True
                 checkInter (h:tail) = case h of
                   Nothing  -> False

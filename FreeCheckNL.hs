@@ -155,17 +155,18 @@ checkPfree sig c0 (t0, p0) =
 -- return the left-hand sides of these combinations of profiles
 selectProfiles :: Signature -> Cache -> FunName -> Term -> [Term] -> (Cache, [[Term]])
 selectProfiles sig c0 f t ql = (cf, map fst oks)
-  where (cf, (oks, _)) = getCombinations (partition c0 (profile sig f))
-        getCombinations r@(_, (_, [])) =  r
-        getCombinations (c, (okl, (d,r):tail)) = (c', (recokl, (d,r):reckol))
-          where (c', recokl, reckol) = case getCombinations (c, (okl, tail)) of
-                  (cRec, (oktail, kotail)) -> (cDist, oktail ++ okdist, kotail ++ kodist)
-                    where (cDist, (okdist, kodist)) = partition cRec (map sumProfile kotail)
+  where (cf, oks, _) = getCombinations (partition c0 (profile sig f))
+        getCombinations r@(_, _, []) =  r
+        getCombinations (c, okl, (d,r):tail) = (cDist, recokl, (d,r):reckol)
+          where (cRec, oktail, kotail) = getCombinations (c, okl, tail)
                 sumProfile (d', r') = (zipWith plus d d', plus r r')
-        partition c = foldr checkProfile (c, ([], []))
-        checkProfile p@(_, r) (c, (okl, kol)) = case foldM accuCheck c tmSet of
-          Left c'  -> (c', (okl, p:kol)) -- profile rejected
-          Right c' -> (c', (p:okl, kol)) -- profile accepted
+                (cDist, okdist, kodist) = partition cRec (map sumProfile kotail)
+                recokl = oktail ++ okdist
+                reckol = kotail ++ kodist
+        partition c = foldr checkProfile (c, [], [])
+        checkProfile p@(_, r) (c, okl, kol) = case foldM accuCheck c tmSet of
+          Left c'  -> (c', okl, p:kol) -- profile rejected
+          Right c' -> (c', p:okl, kol) -- profile accepted
           where tmSet = removePlusses (conjunction sig t (AVar NoName (AType s r)))
         accuCheck c u = case getInstance sig c u ql of
           (c', Bottom) -> Right c'

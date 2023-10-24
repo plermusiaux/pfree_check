@@ -25,8 +25,6 @@ module Datatypes (
   Module(..)
 ) where
 
-import Data.List ( intercalate )
-import Data.Maybe ( fromJust )
 import Data.String ( IsString(..) )
 
 import Text.Printf

@@ -1,7 +1,6 @@
 module AlgoUtils ( collect, interleave, isBottom, linearize,
                    plus, removePlusses, sumTerm ) where
 
-import Control.Monad ( mapM )
 import qualified Data.Set as S
 
 import Datatypes
@@ -24,7 +23,7 @@ sumTerm = foldr plus Bottom
 removePlusses :: Term -> S.Set Term
 removePlusses (Plus p1 p2) = removePlusses p1 `S.union` removePlusses p2
 removePlusses (Appl f ps) = S.fromList (map (Appl f) subterms)            --S1
-  where subterms = mapM (S.toList . removePlusses) ps
+  where subterms = traverse (S.toList . removePlusses) ps
 --   where subterms = foldr buildSet (S.singleton []) ps
 --         buildSet t sl = foldr (S.union . (buildList t)) S.empty sl
 --         buildList t l = S.mapMonotonic (:l) (removePlusses t)
