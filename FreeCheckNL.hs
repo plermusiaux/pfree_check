@@ -124,7 +124,7 @@ checkPfree sig c0 (t0, p0) =
           | isFunc sig f = (S.insert u fSet, v)
           | otherwise    = (fSet', Appl f vs)
           where (fSet', vs) = foldr accuConvert (fSet, []) us
-                v = AVar (VarName (show u)) (AType (range sig f) Bottom)
+                v = AVar (Reduct u) (AType (range sig f) Bottom)
         accuConvert ti (mi, tl) = (mi', ti':tl)
           where (mi', ti') = convert mi ti
         recCheck c _ _ BotMap _ = Right c
@@ -141,7 +141,7 @@ checkPfree sig c0 (t0, p0) =
                                 d = domain sig f
                                 buildVar si qi = AVar NoName (AType si qi)
                                 (cp, profiles) = selectProfiles sig c f u pl'
-                                (u, pl') = case M.lookup (VarName (show t)) vMap of
+                                (u, pl') = case M.lookup (Reduct t) vMap of
                                   Just (v, ql) -> (v, pl++ql)
                                   Nothing -> (AVar NoName (AType s Bottom), pl)
         nextF _ (c, BotMap) = Right c

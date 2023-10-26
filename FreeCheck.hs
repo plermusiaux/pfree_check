@@ -46,7 +46,7 @@ buildEqui flag sig c0 t@(Appl f ts) = do
           if null fails then subCheck cache' l  -- t is p-free
           else return (cache', False)           -- t is not p-free, stop subCheck computation
         x = case flag of Strict -> NoName
-                         _      -> (VarName (show t))
+                         _      -> Reduct t
 buildEqui _ _ c t = return (c, t)
 
 ------------------------------------------------------------------------------
