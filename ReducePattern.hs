@@ -3,6 +3,8 @@ module ReducePattern ( alias, appl, complement, conjunction, normalizeSig, infer
 import qualified Data.Map as M
 import qualified Data.Set as S
 
+import Text.Printf ( printf )
+
 import AlgoUtils ( interleave, isBottom, plus, removePlusses, sumTerm )
 import Datatypes
 import Reach ( isInstantiable )
@@ -130,7 +132,7 @@ normalizeSig sig@(Signature ctors funs) = Signature ctors tFuns
 -- by replacing the corresponding variables with the inferred pattern.
 -- the obtained rhs patterns are qsymb
 replaceVariables :: Signature -> Rule -> [AType] -> [Rule]
-replaceVariables sig (Rule (Appl f ls) rhs) d = foldl accuRule [] lterms
+replaceVariables sig r@(Rule (Appl f ls) rhs) d = foldl accuRule [] lterms
   where lterms = removePlusses (Appl f subLterms)
         subLterms = zipWith conjVar ls d
         conjVar t s = conjunction sig t (AVar NoName s)
@@ -145,7 +147,7 @@ replaceVariables sig (Rule (Appl f ls) rhs) d = foldl accuRule [] lterms
                 replaceVar m (Appl f ts) = Appl f (map (replaceVar m) ts)
                 replaceVar m (AVar x Unknown) = case M.lookup x m of
                   Just t  -> t
-                  Nothing -> error ("variable " ++ show x ++ " unknown")
+                  Nothing -> error $ printf "variable %v unknown in rhs of rule:\n\t%v" x r
                 s = range sig f
 
 

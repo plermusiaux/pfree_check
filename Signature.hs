@@ -30,6 +30,8 @@ import Data.List ( find )
 import Data.Either
 import Data.Maybe
 
+import Text.Printf ( printf )
+
 _funName (Constructor f _ _) = f
 _Cdomain (Constructor _ d _) = d
 _Crange (Constructor _ _ r) = r
@@ -40,13 +42,13 @@ _Frange (Function _ _ r _) = r
 getFunction :: Signature -> FunName -> Function
 getFunction (Signature _ funs) f = try (find isF funs)
   where try (Just r) = r
-        try Nothing = error (show f ++ " is not declared")
+        try Nothing = error $ printf "%v is not declared" f
         isF (Function g _ _ _) = f == g
 
 getter :: (Constructor -> a) -> (Function -> a) -> Signature -> FunName -> a
 getter getC getF (Signature ctors funs) f = unpack (find isF eithers)
   where unpack (Just r) = either getC getF r
-        unpack Nothing = error (show f ++ " is not declared")
+        unpack Nothing = error $ printf "%v is not declared" f
         eithers = (map Left ctors) ++ (map Right funs)
         isF (Left (Constructor g _ _)) = f == g
         isF (Right (Function g  _ _ _)) = f == g
@@ -88,7 +90,7 @@ hasType sig t0 s0 = t0 # s0
 typeCheck :: Signature -> Term -> TypeName -> Term
 typeCheck sig t0 s0 = case (t0 # s0) of
   Nothing      -> t0
-  Just (v, s) -> error (show v ++ " does not match expected type " ++ show s)
+  Just (v, s) -> error $ printf "%v does not match expected type %v" v s
   where
     t@(Appl f tl) # s
       | (range sig f /= s)    = Just (t, s)

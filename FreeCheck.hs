@@ -1,10 +1,15 @@
 module FreeCheck (checkTRS, Flag(..)) where
 
-import Control.Monad ( foldM, liftM )
+import Control.Monad ( foldM )
 import Data.Either
+import Data.Foldable ( foldl' )
 import Data.Maybe
+import Data.Traversable ( mapAccumL )
+
 import qualified Data.Map as M
 import qualified Data.Set as S
+
+import Text.Printf ( printf )
 
 import AlgoUtils ( isBottom, plus, removePlusses )
 import Datatypes
@@ -27,14 +32,13 @@ data Flag = Default
 
 -- return the semantics equivalent of a term
 buildEqui :: Flag -> Signature -> Cache -> Term -> (Cache, Term)
-buildEqui flag sig c0 t@(Appl f ts)
-  | isFunc sig f = (c2, AVar x (AType (range sig f) p))
-  | otherwise    = (c1, Appl f equis)
-  where (c1, equis) = foldr buildSub (c0, []) ts
-        buildSub t (cache, l) = (cache', t':l)
-          where (cache', t') = buildEqui flag sig cache t
-        (c2, p) = foldl accuCheck (c1, Bottom) (profile sig f)
-        accuCheck (cache, p) (qs, q) = case foldM subCheck cache (zip equis qs) of
+buildEqui flag sig c0 t@(Appl f ts) =
+  let (c1, equis) = mapAccumL (buildEqui flag sig) c0 ts in
+  if isFunc sig f then
+    let (c2, p) = foldl' (accuCheck equis) (c1, Bottom) (profile sig f) in
+    (c2, AVar x (AType (range sig f) p))
+  else (c1, Appl f equis)
+  where accuCheck equis (cache, p) (qs, q) = case foldM subCheck cache (zip equis qs) of
           Right cache' -> (cache', plus p q)
           Left cache'  -> (cache', p)
         subCheck cache tp
@@ -42,7 +46,7 @@ buildEqui flag sig c0 t@(Appl f ts)
           | otherwise  = Left cache'  -- t is not p-free, stop subCheck computation
           where (cache', fails) = checkPfree flag sig cache tp
         x = case flag of Strict -> NoName
-                         _      -> (VarName (show t))
+                         _      -> Reduct t
 buildEqui _ _ c t = (c, t)
 
 ------------------------------------------------------------------------------
@@ -50,34 +54,32 @@ buildEqui _ _ c t = (c, t)
 -- check TRS : call checkRule for each rule and concatenate the results
 -- return a map of failed rule with the terms that do not satisfy the expected pattern-free property
 checkTRS :: Flag -> Signature -> [Rule] -> M.Map Rule (Term,[Term])
-checkTRS flag sig rules = snd (foldl accuCheck (emptyCache, M.empty) rules)
+checkTRS flag sig rules = snd $ foldl' accuCheck (emptyCache, M.empty) rules
   where nSig = normalizeSig sig
-        accuCheck (c, m) rule
-          | null fails = (c', m)
-          | otherwise  = (c', M.union m fails)
-          where (c', fails) = checkRule flag nSig c rule
+        accuCheck (c, m) rule =
+          let (c', fails) = checkRule flag nSig c rule in
+          if null fails then (c', m) else (c', M.union m fails)
 
 -- check rule : for each profile of the head function symbol of the left hand side,
 -- alias the variables in the right hand side and build its semantics equivalent,
 -- then check that the term obtained verifies the corresponding pattern-free property.
 -- return a list of terms that do not satisfy the expected pattern-free properties
 checkRule :: Flag -> Signature -> Cache -> Rule -> (Cache, M.Map Rule (Term,[Term]))
-checkRule Default sig c r = foldl accuCheck (c, M.empty) $ inferRules sig r
-  where accuCheck (cache, m) (Rule lhs rhs, p)
-          | isFLinear sig rhs = if null fails
-                                then (cache2, m)
-                                else (cache2, M.insert (Rule lhs equi) (p,fails) m)
-          | nlcheck           = (cache, m)
-          | otherwise         = (cache, M.insert (Rule lhs rhs) (p, [rhs]) m)
-          where (cache1, equi) = buildEqui Default sig cache rhs
-                (cache2, fails) = checkPfree Default sig cache1 (equi,p)
-                nlcheck = checkPfreeNL sig (rhs, p)
-checkRule flag sig c r = foldl accuCheck (c, M.empty) $ inferRules sig r
-  where accuCheck (cache, m) (Rule lhs rhs, p)
-          | null fails = (cache2, m)
-          | otherwise  = (cache2, M.insert (Rule lhs equi) (p,fails) m)
-          where (cache1, equi) = buildEqui flag sig cache rhs
-                (cache2, fails) = checkPfree flag sig cache1 (equi,p)
+checkRule Default sig c r = foldl' accuCheck (c, M.empty) $ inferRules sig r
+  where accuCheck (cache, m) (Rule lhs rhs, p) =
+          if isFLinear sig rhs then
+            let (cache1, equi) = buildEqui Default sig cache rhs in
+            let (cache2, fails) = checkPfree Default sig cache1 (equi,p) in
+            if null fails then (cache2, m)
+            else (cache2, M.insert (Rule lhs equi) (p,fails) m)
+          else if checkPfreeNL sig (rhs, p) then (cache, m)
+          else (cache, M.insert (Rule lhs rhs) (p, [rhs]) m)
+checkRule flag sig c r = foldl' accuCheck (c, M.empty) $ inferRules sig r
+  where accuCheck (cache, m) (Rule lhs rhs, p) =
+          let (cache1, equi) = buildEqui flag sig cache rhs in
+          let (cache2, fails) = checkPfree flag sig cache1 (equi,p) in
+          if null fails then (cache2, m)
+          else (cache2, M.insert (Rule lhs equi) (p,fails) m)
 
 -- check that a Term has no shared variable in different parameters of
 -- a function symbol
@@ -90,7 +92,7 @@ isFLinear sig t0 = isJust (getOKVar t0)
           | (isFunc sig f) && not (checkInter vts) = Nothing
           | otherwise                              = uVar
           where vts = map getOKVar ts
-                uVar = foldM (liftM . S.union) S.empty vts
+                uVar = foldM (fmap . S.union) S.empty vts
                 checkInter [] = True
                 checkInter (h:tail) = case h of
                   Nothing  -> False
@@ -105,22 +107,26 @@ checkPfree flag _ c0 (_, Bottom) = (c0, [])
 checkPfree flag sig c0 (t, p) = accuCheck (c0, []) t
   where accuCheck (c@(Cache m), l) u@(Appl _ ts) = case M.lookup (u,p) m of
           Just res -> (c, res ++ l)
-          Nothing | check flag sig p u -> (Cache (M.insert (u, p) lSub mSub), lSub ++ l)
-                  | otherwise        -> (Cache (M.insert (u, p) (u:lSub) mSub), u:(lSub ++ l))
-                  where (Cache mSub, lSub) = foldl accuCheck (c,[]) ts
+          Nothing  ->
+            let (Cache mSub, lSub) = foldl' accuCheck (c,[]) ts in
+            if check flag sig p u then
+              (Cache (M.insert (u, p) lSub mSub), lSub ++ l)
+            else (Cache (M.insert (u, p) (u:lSub) mSub), u:(lSub ++ l))
         accuCheck (c@(Cache m), l) u@(AVar _ s) = case M.lookup (u',p) m of
           Just res -> (c, res ++ l)
-          Nothing | all (check flag sig p) reachables -> (Cache (M.insert (u', p) [] m), l)
-                  | otherwise                    -> (Cache (M.insert (u', p) [u'] m), u':l)
-                  where reachables = getReachable sig s S.empty
+          Nothing ->
+            if all (check flag sig p) $ getReachable sig s S.empty then
+              (Cache (M.insert (u', p) [] m), l)
+            else (Cache (M.insert (u', p) [u'] m), u':l)
           where u' = AVar NoName s
         accuCheck (c@(Cache m), l) u@(Compl (AVar _ s) r) = case M.lookup (u',p) m of
           Just res -> (c, res ++ l)
-          Nothing | all (check flag sig p) reachables -> (Cache (M.insert (u', p) [] m), l)
-                  | otherwise                    -> (Cache (M.insert (u', p) [u'] m), u':l)
-                  where reachables = getReachable sig s (removePlusses r)
+          Nothing ->
+            if all (check flag sig p) $ getReachable sig s (removePlusses r) then
+              (Cache (M.insert (u', p) [] m), l)
+            else (Cache (M.insert (u', p) [u'] m), u':l)
           where u' = Compl (AVar NoName s) r
-        accuCheck (c, l) (Alias _ u) = accuCheck (c, l) u
+        accuCheck cl (Alias _ u) = accuCheck cl u
 
 -- check that t X p reduces to Bottom
 -- with t a qaddt term and p a sum of constructor patterns
