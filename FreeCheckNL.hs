@@ -1,5 +1,3 @@
-{-# LANGUAGE TupleSections #-}
-
 module FreeCheckNL ( checkTRSnl, checkPfreeNL ) where
 
 import Control.Arrow ( left )
@@ -116,38 +114,31 @@ checkPfree :: Signature -> Cache -> (Term, Term) -> IO (Cache, Term)
 checkPfree _ c0 (t0, Bottom) = return (c0, t0)
 checkPfree sig c0 (t0, p0) =
   instantiate sig checkMap t0 <$ printf "checking %v-free: %v\n" p0 t0
-  where checkMap = either id (,BotMap) $ recCheck c0 t0 [p0] (VarMap M.empty) S.empty
-        convert fSet x@(AVar _ _)  = (fSet, x)
-        convert fSet a@(Alias _ _) = (fSet, a)
-        convert fSet u@(Compl _ _) = (fSet, u)
-        convert fSet u@(Appl f us)
-          | isFunc sig f = (S.insert u fSet, v)
-          | otherwise    = (fSet', Appl f vs)
-          where (fSet', vs) = foldr accuConvert (fSet, []) us
-                v = AVar (Reduct u) (AType (range sig f) Bottom)
-        accuConvert ti (mi, tl) = (mi', ti':tl)
-          where (mi', ti') = convert mi ti
-        recCheck c _ _ BotMap _ = Right c
-        recCheck c v@(AVar x _) pl cMap fSet = nextF fSet (checkInsert sig x (v, pl) (c, cMap))
-        recCheck c (Alias x t) pl cMap fSet = nextF fSet (checkInsert sig x (t, pl) (c, cMap))
-        recCheck c t@(Appl f ts) pl cMap@(VarMap vMap) fSet = foldM check c' (removePlusses tm)
-          where check cc ti = nextF fSet' $ getCheckMap sig ti (cc, cMap)
-                (fSet', ts') = foldr accuConvert (fSet, []) ts
-                (c', tm) = complementC sig cq (Appl f ts') (sumTerm ql)
-                  where (cq, ql)
-                          | isFunc sig f = (cp, map ((Appl f) . (zipWith buildVar d)) profiles)
-                          | otherwise    = (c, map (buildVar s) pl)
-                          where s = range sig f
-                                d = domain sig f
-                                buildVar si qi = AVar NoName (AType si qi)
-                                (cp, profiles) = selectProfiles sig c f u pl'
-                                (u, pl') = case M.lookup (Reduct t) vMap of
-                                  Just (v, ql) -> (v, pl++ql)
-                                  Nothing -> (AVar NoName (AType s Bottom), pl)
-        nextF _ (c, BotMap) = Right c
-        nextF fSet (c, cMap) = case S.maxView fSet of
-          Nothing          -> Left (c, cMap)
-          Just (tf, fSet') -> recCheck c tf [] cMap fSet'
+  where checkMap = either id (,BotMap) $ recCheck c0 (convert t0) [p0] (VarMap M.empty)
+        convert x@(AVar _ _)  = x
+        convert a@(Alias _ _) = a
+        convert u@(Compl _ _) = u
+        convert u@(Appl f us)
+          | isFunc sig f = AVar (Reduct u) (AType (range sig f) Bottom)
+          | otherwise    = Appl f (map convert us)
+        recCheck c _ _ BotMap = Right c
+        recCheck c v@(AVar x _) pl cMap = nextF (checkInsert sig x (v, pl) (c, cMap))
+        recCheck c (Alias x t) pl cMap = nextF (checkInsert sig x (t, pl) (c, cMap))
+        recCheck c t@(Appl f _) pl cMap = foldM check c' (removePlusses tm)
+          where check cc tk = nextF $ getCheckMap sig tk (cc, cMap)
+                (c', tm) = complementC sig c t q
+                q = foldr (plus . buildVar (range sig f)) Bottom pl
+        nextF (c, BotMap) = Right c
+        nextF cm@(c, VarMap vMap) = case findReduct vMap of
+          Nothing -> Left cm
+          Just (x@(Reduct (Appl f ts)), u, ql) -> foldM check c2 (removePlusses tm)
+            where check cc tk = nextF $ getCheckMap sig tk (cc, VarMap vMap')
+                  vMap' = M.delete x vMap
+                  (c1, profiles) = selectProfiles sig c f u ql
+                  (c2, tm) = complementC sig c1 (Appl f (map convert ts)) q
+                  q = foldr (plus . (Appl f) . (zipWith buildVar d)) Bottom profiles
+                  d = domain sig f
+        buildVar si qi = AVar NoName (AType si qi)
 
 -- given the profiles of f select the combinations of profiles
 -- such that for all instances v of t verifying the right-hand side,
@@ -216,6 +207,9 @@ getCheckMap sig (Alias x u) r = checkInsert sig x (u, []) r
 getCheckMap sig (Compl (Alias x u) q) r = checkInsert sig x (u, collect q) r
 getCheckMap sig (Compl v@(AVar x _) q) r = checkInsert sig x (v, collect q) r
 
+findReduct = M.foldlWithKey getReduct Nothing
+  where getReduct _ r@(Reduct _) (u, ql) = Just (r, u, ql)
+        getReduct acc _ _ = acc
 
 
 --------------------------------- no cache ------------------------------------
