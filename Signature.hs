@@ -54,13 +54,13 @@ getter getC getF (Signature ctors funs) f = unpack (find isF eithers)
         isF (Right (Function g  _ _ _)) = f == g
 
 domain :: Signature -> FunName -> [TypeName]
-domain sig f = getter _Cdomain _Fdomain sig f
+domain = getter _Cdomain _Fdomain
 
 range :: Signature -> FunName -> TypeName
-range sig f = getter _Crange _Frange sig f
+range = getter _Crange _Frange
 
 arity :: Signature -> FunName -> Int
-arity sig f = length (domain sig f)
+arity sig = length . domain sig
 
 profile :: Signature -> FunName -> [([Term], Term)]
 profile sig f = case getFunction sig f of
@@ -71,14 +71,14 @@ ctorsOfRange (Signature ctors _) ty = map _funName (filter hasRangeTy ctors)
   where hasRangeTy (Constructor _ _ ty' ) = ty == ty'
 
 ctorsOfSameRange :: Signature -> FunName -> [FunName]
-ctorsOfSameRange sig f = ctorsOfRange sig (range sig f)
+ctorsOfSameRange sig = ctorsOfRange sig . range sig
 
 isFunc :: Signature -> FunName -> Bool
 isFunc (Signature _ funs) f = any isF funs
   where isF (Function g _ _ _) = f==g
 
 hasType :: Signature -> Term -> TypeName -> Bool
-hasType sig t0 s0 = t0 # s0
+hasType sig = (#)
   where
     (Appl f _) # s = range sig f == s
     (Alias _ u) # s = u # s
@@ -88,9 +88,9 @@ hasType sig t0 s0 = t0 # s0
     (Plus u1 u2) # s = u1 # s || u2 # s
 
 typeCheck :: Signature -> Term -> TypeName -> Term
-typeCheck sig t0 s0 = case (t0 # s0) of
-  Nothing      -> t0
-  Just (v, s) -> error $ printf "%v does not match expected type %v" v s
+typeCheck sig = \ t0 s0 -> case (t0 # s0) of
+    Nothing      -> t0
+    Just (v, s) -> error $ printf "%v does not match expected type %v" v s
   where
     t@(Appl f tl) # s
       | (range sig f /= s)    = Just (t, s)
@@ -109,7 +109,7 @@ typeCheck sig t0 s0 = case (t0 # s0) of
     (Plus u1 u2) # s = maybe (u2 # s) Just (u1 # s)
 
 inferType :: Signature -> Term -> TypeName
-inferType sig t = typof t
+inferType sig = typof
   where typof (Appl f _) = range sig f
         typof (AVar _ (AType s _)) = s
         typof (Alias _ u) = typof u

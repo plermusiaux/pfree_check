@@ -141,9 +141,9 @@ instance PrintfArg (FormatA a) where
 
 formatList :: (a -> FieldFormatter) -> String -> [a] -> FormatA [a]
 formatList f sep = (format,)
-  where format [] fmt = id
+  where format [] _ = id
         format [x] fmt = f x fmt
-        format (x:xs) fmt = printf "%a%s%a%s" (f, x) sep (format, xs)
+        format (x:xs) _ = printf "%a%s%a%s" (f, x) sep (format, xs)
 
 instance PrintfArg VarName where
   formatArg x fmt | fmtChar fmt == 'v' =
@@ -183,7 +183,9 @@ instance PrintfArg AType where
   formatArg _ fmt = errorBadFormat $ fmtChar fmt
 
 instance Show AType where
-  show = printf "%v"
+  show (AType s Bottom) = show s
+  show (AType s p) = printf "%v[-%v]" s p
+  show Unknown = ""
 
 instance PrintfArg Constructor where
   formatArg (Constructor f tys ty) fmt | fmtChar fmt == 'v' =
@@ -191,16 +193,18 @@ instance PrintfArg Constructor where
   formatArg _ fmt = errorBadFormat $ fmtChar fmt
 
 instance Show Constructor where
-  show = printf "%v"
+  show (Constructor f tys ty) =
+    printf "%v: %v -> %a" f (formatList formatArg " * " tys) ty
+
+printProfile (qs, p) _ = printf "%a -> %v%s" (formatList formatArg " * " qs) p
 
 instance PrintfArg Function where
   formatArg (Function f d r pr) fmt | fmtChar fmt == 'v' =
-    printf "%v: %a%s" f (formatList profile " | " pr)
-    where profile (qs, p) _ = printf "%a -> %v%s" (formatList formatArg " * " qs) p
+    printf "%v: %a%s" f (formatList printProfile " | " pr)
   formatArg _ fmt = errorBadFormat $ fmtChar fmt
 
 instance Show Function where
-  show = printf "%v"
+  show (Function f d r pr) = printf "%v: %a" f (formatList printProfile " | " pr)
 
 instance Show Signature where
   show (Signature ctors funs) = show (ctors, funs)
@@ -219,7 +223,14 @@ instance PrintfArg Term where
   formatArg _ fmt = errorBadFormat $ fmtChar fmt
 
 instance Show Term where
-  show = printf "%v"
+  show (Appl f ps) = printf "%v(%a)" f (formatList formatArg ", " ps)
+  show (Plus p1 p2) = printf "(%v + %v)" p1 p2
+  show (Compl p1 p2) = printf "(%v \\ %v)" p1 p2
+  show (Alias x p) = printf "%v@%v" x p
+  show (Anti p) = printf "!%v" p
+  show Bottom = "⊥"
+  show (AVar x Unknown) = show x
+  show (AVar x s) = printf "%v : %v" x s
 
 instance PrintfArg Rule where
   formatArg (Rule lhs rhs) fmt | fmtChar fmt == 'v' =
@@ -227,7 +238,7 @@ instance PrintfArg Rule where
   formatArg _ fmt = errorBadFormat $ fmtChar fmt
 
 instance Show Rule where
-  show = printf "%v"
+  show (Rule lhs rhs) = printf "%v -> %v" lhs rhs
 
 {- IsString instances -}
 
