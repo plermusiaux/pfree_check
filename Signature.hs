@@ -17,15 +17,15 @@ module Signature (
   ctorsOfRange,
   ctorsOfSameRange,
   domain,
+  hasType,
   inferType,
   isFunc,
-  hasType,
   profile,
-  typeCheck,
-  range
+  range,
+  typeCheck
 ) where
 
-import Datatypes (FunName, TypeName, Constructor(..), Function(..), Signature(..), Term(..), AType(..))
+import Datatypes (FunName, TypeName, VarName(..), Constructor(..), Function(..), Signature(..), Term(..), AType(..))
 import Data.List ( find )
 import Data.Either
 import Data.Maybe
@@ -87,30 +87,50 @@ hasType sig = (#)
     (Compl u _) # s = u # s
     (Plus u1 u2) # s = u1 # s || u2 # s
 
-typeCheck :: Signature -> Term -> TypeName -> Term
-typeCheck sig = \ t0 s0 -> case (t0 # s0) of
-    Nothing      -> t0
-    Just (v, s) -> error $ printf "%v does not match expected type %v" v s
-  where
-    t@(Appl f tl) # s
-      | (range sig f /= s)    = Just (t, s)
-      | otherwise              = checkArg tl (domain sig f)
-      where checkArg [] [] = Nothing
-            checkArg (ti:tip) (si:sip) = case ti # si of
-              Nothing -> checkArg tip sip
-              just    -> just
-            checkArg _ _ = Just (t, s)
-    (Alias _ u) # s = u # s
-    Bottom # s = Just (Bottom, s)
-    u@(AVar _ (AType s1 _)) # s2
-      | s1 /= s2  = Just (u, s2)
-      | otherwise = Nothing
-    (Compl u _) # s = u # s
-    (Plus u1 u2) # s = maybe (u2 # s) Just (u1 # s)
-
 inferType :: Signature -> Term -> TypeName
 inferType sig = typof
-  where typof (Appl f _) = range sig f
+  where typof (Appl f tl) =
+          if checkArg tl d then range sig f
+          else error $ printf "symbol [%v] expects %i arguments" f (length d)
+          where d = domain sig f
         typof (AVar _ (AType s _)) = s
         typof (Alias _ u) = typof u
-        typof (Compl u _) = typof u
+        typof (Plus u1 u2) =
+          let s1 = typof u1 in
+          if s1 == typof u2 then s1
+          else error $ printf "type of %v does not match type of %v" u1 u2
+        typof (Compl u r) =
+          let s = typof u in
+          if s == typof r then s
+          else error $ printf "type of %v does not match type of %v" u r
+        typof Bottom = error $ printf "cannot infer type of ⊥"
+        checkArg [] [] = True
+        checkArg (t:tl) (s:sl) = let !_ = typeCheck sig t s in checkArg tl sl
+        checkArg _ _ = False
+
+typeCheck :: Signature -> Term -> TypeName -> Term
+typeCheck sig = (#)
+  where (Appl f tl) # s =
+          case checkArg tl d of
+            Just ul
+              | range sig f == s -> Appl f ul
+              | otherwise        -> error $ printf "return type of [%v] does not match expected type %v" f s
+            _                    -> error $ printf "symbol [%v] expects %i arguments" f (length d)
+          where d = domain sig f
+        (AVar x Unknown) # s = AVar x (AType s Bottom)
+        t@(AVar x (AType s1 _)) # s2 =
+          if s1 == s2 then t
+          else error $ printf "variable %v is typed %v, which does not match expected type %v" x s1 s2
+        Bottom # s = error $ printf "type of ⊥ is undefined"
+        (Alias x u) # s = Alias x $! (u # s)
+        (Plus u1 u2) # s =
+          (Plus $! (u1 # s)) $! (u2 # s)
+        (Compl u r) # s =
+          (Compl $! (u # s)) $! (r # s)
+        (Anti p) # s = Compl (AVar NoName (AType s Bottom)) $! (p # s)
+        checkArg [] [] = Just []
+        checkArg (t:tl) (s:sl) = case checkArg tl sl of
+          Just ul -> Just $! (t # s) : ul
+          nothing -> nothing
+        checkArg _ _ = Nothing
+
