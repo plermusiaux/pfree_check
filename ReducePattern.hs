@@ -104,20 +104,17 @@ conjunction sig = (*)
 normalizeSig :: Signature -> Signature
 normalizeSig sig@(Signature ctors funs) = Signature ctors tFuns
   where tFuns = map normF funs
-        normF (Function f d r pr) = (Function f d r (map normPr pr))
-          where normPr (qs, p) = (map reduce $ zipWith (#) qs d, reduce $ p # r)
-        reduce Bottom = Bottom
+        normF (Function f d r pr) = (Function f d r (map (normPr d r) pr))
+        normPr d r (qs, p) = (map reduce $ zipWith (#) qs d, reduce $ p # r)
+        reduce b@Bottom = b
         reduce v@(AVar _ _) = v
         reduce (Plus u1 u2) = Plus (reduce u1) (reduce u2)
         reduce (Compl u v) = complement sig (reduce u) (reduce v)
         reduce (Appl g tl) = sumTerm $ removePlusses (Appl g (map reduce tl))
-        Bottom # _ = Bottom
-        (AVar x Unknown) # so      = AVar x (AType so Bottom)
-        v@(AVar x (AType _ _)) # _ = v
-        (Anti u)     # so = Compl (AVar NoName (AType so Bottom)) (u # so)
-        (Compl u v)  # so = Compl (u # so) (v # so)
-        (Plus u1 u2) # so = Plus (u1 # so) (u2 # so)
-        (Appl g tl)  # _  = Appl g (zipWith (#) tl (domain sig g))
+        b@Bottom # _ = b
+        (Plus u1 u2) # s = Plus (u1 # s) (u2 # s)
+        (Appl g tl)  # _  = Appl g (zipWith (typeCheck sig) tl (domain sig g))
+        t # s = typeCheck sig t s
 
 -- for each profile of the annotated symbol of the lhs,
 -- infer, as qaddt patterns, the possible shapes of the variables
@@ -125,30 +122,31 @@ normalizeSig sig@(Signature ctors funs) = Signature ctors tFuns
 -- for all possible inference, generate the corresponding rhs
 -- by replacing the corresponding variables with the inferred pattern.
 -- the obtained rhs patterns are qsymb
-replaceVariables :: Signature -> Rule -> [AType] -> [Rule]
-replaceVariables sig r@(Rule (Appl f ls) rhs) d = foldl accuRule [] lterms
-  where lterms = removePlusses (Appl f subLterms)
-        subLterms = zipWith conjVar ls d
-        conjVar t s = conjunction sig t (AVar NoName s)
-        accuRule l lhs
+replaceVariables :: Signature -> Rule -> [Rule]
+replaceVariables sig r@(Rule lhs rhs) = foldl accuRule [] (removePlusses lhs)
+  where accuRule l lhs
           | any isBottom varMap = l -- if a variable has conflicting instances (PL: do we really need to test?)
-          | otherwise           = (Rule lhs (typeCheck sig ((replaceVar varMap) rhs) s)):l
-          where varMap = getVarMap lhs s -- c(ti) * x^-bot is reduced to c(ti) so we build the annotated sorts manually for variables of ti
-        getVarMap t@(Alias x _) _ = M.singleton x t
-        getVarMap (Appl g ts) _ = M.unionsWith (conjunction sig) (zipWith getVarMap ts (domain sig g))
-        getVarMap (AVar x _) s = M.singleton x (Alias x (AVar NoName (AType s Bottom)))
-        getVarMap (Compl (AVar x _) r) s = M.singleton x (Alias x (Compl (AVar x (AType s Bottom)) r))
+          | otherwise           = (Rule lhs (replaceVar varMap rhs)) : l
+          where varMap = getVarMap lhs
+        getVarMap t@(Alias x _) = M.singleton x t
+        getVarMap (Appl g ts) = M.unionsWith (conjunction sig) (map getVarMap ts)
+        getVarMap (AVar x s) = M.singleton x (Alias x (AVar NoName s))
+        getVarMap (Compl (AVar x s) r) = M.singleton x (Alias x (Compl (AVar NoName s) r))
         replaceVar m (Appl f ts) = Appl f (map (replaceVar m) ts)
         replaceVar m (AVar x Unknown) = case M.lookup x m of
           Just t  -> t
           Nothing -> error $ printf "variable %v unknown in rhs of rule:\n\t%v" x r
-        s = range sig f
 
 
 inferRules :: Signature -> Rule -> [(Rule, Term)]
-inferRules sig r@(Rule (Appl f _) _) = concatMap buildRule (map buildDomain (profile sig f))
-  where buildRule (_, Bottom) = []
-        buildRule (ad, p) = zip (replaceVariables sig r ad) (repeat p)
-        buildDomain (qs, p) = (zipWith AType d qs, p)
+inferRules sig (Rule (Appl f ls0) rhs0) = concatMap buildRules (map buildDomain (profile sig f))
+  where buildDomain (qs, p) = (zipWith AType d qs, p)
+        buildRules (_, Bottom) = []
+        buildRules (ad, p) = map (buildRule p) (replaceVariables sig (Rule lhs rhs0))
+          where lhs = Appl f (zipWith conjVar ls ad)
+        buildRule p (Rule l rhs) = (Rule l (typeCheck sig rhs s), p)
+        conjVar t a = conjunction sig t (AVar NoName a)
+        ls = zipWith (typeCheck sig) ls0 d
         d = domain sig f
+        s = range sig f
 
