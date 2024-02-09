@@ -21,6 +21,7 @@ import Data.List (concatMap)
 import Data.Map (Map, foldlWithKey)
 import Data.Maybe (fromJust)
 
+import System.IO ( hFlush, stdout )
 
 import Datatypes 
 import FreeCheck
@@ -81,14 +82,17 @@ main = do
   on checkButton click $
     do inputText <- TextArea.getValue inputArea
        outputText <- liftIO $ run Default inputText
+       liftIO $ hFlush stdout
        setInnerHTML outputArea outputText
   on checkLinearButton click $
     do inputText <- TextArea.getValue inputArea
        outputText <- liftIO $ run Linearized inputText
+       liftIO $ hFlush stdout
        setInnerHTML outputArea outputText
   on checkStrictButton click $
     do inputText <- TextArea.getValue inputArea
        outputText <- liftIO $ run Strict inputText
+       liftIO $ hFlush stdout
        setInnerHTML outputArea outputText
   on exampleSelector change $
     do name <- Select.getValue exampleSelector
