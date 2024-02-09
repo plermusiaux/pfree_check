@@ -3,7 +3,9 @@ module ReducePattern ( alias, appl, complement, conjunction, normalizeSig, infer
 import qualified Data.Map as M
 import qualified Data.Set as S
 
-import AlgoUtils ( interleave, isBottom, plus, removePlusses, sumTerm )
+import Text.Printf ( printf )
+
+import AlgoUtils ( buildVar, interleave, isBottom, plus, removePlusses, sumTerm )
 import Datatypes
 import Reach ( isInstantiable )
 import Signature
@@ -22,7 +24,7 @@ appl f ps | any isBottom ps = Bottom                                      --E1
 ------------------------------------------------------------------------------
 
 complement :: Signature -> Term -> Term -> Term
-complement sig p1 p2 = p1 \\ p2
+complement sig = (\\)
   where
     u \\ (AVar _ _) = Bottom                                              --M1
     u \\ Bottom = u                                                       --M2
@@ -43,8 +45,7 @@ complement sig p1 p2 = p1 \\ p2
         | isInstantiable sig s p r = alias x (Compl (AVar NoName sp) t)
         | otherwise                = Bottom                               --P7
         where cs = ctorsOfRange sig s
-              pattern c = Appl c (map buildVar (domain sig c))
-              buildVar si = AVar NoName (AType si p)
+              pattern c = Appl c (map (`buildVar` p) (domain sig c))
               r = removePlusses t
     Alias x p1 \\ p2 = alias x (p1 \\ p2)
 --    p1 \\ Alias x p2 = p1 \\ p2
@@ -52,7 +53,7 @@ complement sig p1 p2 = p1 \\ p2
 -------------------------------------------------------------------------------
 
 conjunction :: Signature -> Term -> Term -> Term
-conjunction sig p1 p2 = p1 * p2
+conjunction sig = (*)
   where
     Bottom * u = Bottom                                                   --E2
     u * Bottom = Bottom                                                   --E3
@@ -78,18 +79,15 @@ conjunction sig p1 p2 = p1 * p2
 --        | s == range sig f = (sumTerm (map pattern fs)) * (complement sig q p) --P1
 --        | otherwise        = Bottom
 --        where fs = ctorsOfRange sig s
---              pattern a = Appl a (map buildVar (domain sig a))
---              buildVar si = AVar "_" (AType si p)
+--              pattern a = Appl a (map (`buildVar` p) (domain sig a))
     (AVar x (AType s p)) * (Appl f ts)
         | s == range sig f = complement sig (alias x (appl f zXts)) p    --P1
         | otherwise        = Bottom
-        where zXts = zipWith conjVar (domain sig f) ts
-              conjVar si t = (AVar NoName (AType si p)) * t
+        where zXts = zipWith ((*) . (`buildVar` p)) (domain sig f) ts
     (Appl f ts) * (AVar x (AType s p))
         | s == range sig f = complement sig (appl f tXzs) p              --P2
         | otherwise        = Bottom
-        where tXzs = zipWith conjVar ts (domain sig f)
-              conjVar t si = t * (AVar NoName (AType si p))
+        where tXzs = zipWith (\ti -> (ti *) . (`buildVar` p)) ts (domain sig f)
     v1 * (Compl v2 t) = complement sig (v1 * v2) t                       --P3-4
     (Compl v t) * u = complement sig (v * u) t                           --P5
 --    (Var x) * u = Alias x u
@@ -106,22 +104,17 @@ conjunction sig p1 p2 = p1 * p2
 normalizeSig :: Signature -> Signature
 normalizeSig sig@(Signature ctors funs) = Signature ctors tFuns
   where tFuns = map normF funs
-        normF (Function f d r pr) = (Function f d r (map normPr pr))
-          where normPr (qs, p) = (map (reduce.typeP) (zip qs d), (reduce.typeP) (p, r))
-                reduce Bottom = Bottom
-                reduce v@(AVar _ _) = v
-                reduce (Plus u1 u2) = Plus (reduce u1) (reduce u2)
-                reduce (Compl u v) = complement sig (reduce u) (reduce v)
-                reduce (Appl g tl) = sumTerm $ removePlusses (Appl g (map reduce tl))
-                typeP (p,s) = p # s
-                  where
-                    Bottom # _ = Bottom
-                    (AVar x Unknown) # so      = AVar x (AType so Bottom)
-                    v@(AVar x (AType _ _)) # _ = v
-                    (Anti u)     # so = Compl (AVar NoName (AType so Bottom)) (u # so)
-                    (Compl u v)  # so = Compl (u # so) (v # so)
-                    (Plus u1 u2) # so = Plus (u1 # so) (u2 # so)
-                    (Appl g tl)  # _  = Appl g (zipWith (#) tl (domain sig g))
+        normF (Function f d r pr) = (Function f d r (map (normPr d r) pr))
+        normPr d r (qs, p) = (map reduce $ zipWith (#) qs d, reduce $ p # r)
+        reduce b@Bottom = b
+        reduce v@(AVar _ _) = v
+        reduce (Plus u1 u2) = Plus (reduce u1) (reduce u2)
+        reduce (Compl u v) = complement sig (reduce u) (reduce v)
+        reduce (Appl g tl) = sumTerm $ removePlusses (Appl g (map reduce tl))
+        b@Bottom # _ = b
+        (Plus u1 u2) # s = Plus (u1 # s) (u2 # s)
+        (Appl g tl)  # _  = Appl g (zipWith (typeCheck sig) tl (domain sig g))
+        t # s = typeCheck sig t s
 
 -- for each profile of the annotated symbol of the lhs,
 -- infer, as qaddt patterns, the possible shapes of the variables
@@ -129,30 +122,31 @@ normalizeSig sig@(Signature ctors funs) = Signature ctors tFuns
 -- for all possible inference, generate the corresponding rhs
 -- by replacing the corresponding variables with the inferred pattern.
 -- the obtained rhs patterns are qsymb
-replaceVariables :: Signature -> Rule -> [AType] -> [Rule]
-replaceVariables sig (Rule (Appl f ls) rhs) d = foldl accuRule [] lterms
-  where lterms = removePlusses (Appl f subLterms)
-        subLterms = zipWith conjVar ls d
-        conjVar t s = conjunction sig t (AVar NoName s)
-        accuRule l lhs
+replaceVariables :: Signature -> Rule -> [Rule]
+replaceVariables sig r@(Rule lhs rhs) = foldl accuRule [] (removePlusses lhs)
+  where accuRule l lhs
           | any isBottom varMap = l -- if a variable has conflicting instances (PL: do we really need to test?)
-          | otherwise           = (Rule lhs (typeCheck sig ((replaceVar varMap) rhs) s)):l
-          where varMap = getVarMap lhs s -- c(ti) * x^-bot is reduced to c(ti) so we build the annotated sorts manually for variables of ti
-                getVarMap t@(Alias x _) _ = M.singleton x t
-                getVarMap (Appl g ts) _ = M.unionsWith (conjunction sig) (zipWith getVarMap ts (domain sig g))
-                getVarMap (AVar x _) s = M.singleton x (Alias x (AVar NoName (AType s Bottom)))
-                getVarMap (Compl (AVar x _) r) s = M.singleton x (Alias x (Compl (AVar x (AType s Bottom)) r))
-                replaceVar m (Appl f ts) = Appl f (map (replaceVar m) ts)
-                replaceVar m (AVar x Unknown) = case M.lookup x m of
-                  Just t  -> t
-                  Nothing -> error ("variable " ++ show x ++ " unknown")
-                s = range sig f
+          | otherwise           = (Rule lhs (replaceVar varMap rhs)) : l
+          where varMap = getVarMap lhs
+        getVarMap t@(Alias x _) = M.singleton x t
+        getVarMap (Appl g ts) = M.unionsWith (conjunction sig) (map getVarMap ts)
+        getVarMap (AVar x s) = M.singleton x (Alias x (AVar NoName s))
+        getVarMap (Compl (AVar x s) r) = M.singleton x (Alias x (Compl (AVar NoName s) r))
+        replaceVar m (Appl f ts) = Appl f (map (replaceVar m) ts)
+        replaceVar m (AVar x Unknown) = case M.lookup x m of
+          Just t  -> t
+          Nothing -> error $ printf "variable %v unknown in rhs of rule:\n\t%v" x r
 
 
 inferRules :: Signature -> Rule -> [(Rule, Term)]
-inferRules sig r@(Rule (Appl f _) _) = concatMap buildRule (map buildDomain (profile sig f))
-  where buildRule (_, Bottom) = []
-        buildRule (ad, p) = zip (replaceVariables sig r ad) (repeat p)
-        buildDomain (qs, p) = (zipWith AType d qs, p)
+inferRules sig (Rule (Appl f ls0) rhs0) = concatMap buildRules (map buildDomain (profile sig f))
+  where buildDomain (qs, p) = (zipWith AType d qs, p)
+        buildRules (_, Bottom) = []
+        buildRules (ad, p) = map (buildRule p) (replaceVariables sig (Rule lhs rhs0))
+          where lhs = Appl f (zipWith conjVar ls ad)
+        buildRule p (Rule l rhs) = (Rule l (typeCheck sig rhs s), p)
+        conjVar t a = conjunction sig t (AVar NoName a)
+        ls = zipWith (typeCheck sig) ls0 d
         d = domain sig f
+        s = range sig f
 

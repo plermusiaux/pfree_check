@@ -1,4 +1,4 @@
-import Control.Monad.IO.Class ()
+import Control.Monad.IO.Class ( liftIO )
 import Control.Concurrent.MVar ()
 import GHCJS.DOM (currentDocumentUnchecked)
 import GHCJS.DOM.Types
@@ -55,11 +55,11 @@ parseResult sig map
   where accuParse s r (p,ts) = s ++ "\n\n" ++ show r ++ (concatMap (parseFail r p) ts)
         parseFail r p t = "\n" ++ show t ++ " is not " ++ show p ++ "-free"
 
-run :: Flag -> String -> String
+run :: Flag -> String -> IO String
 run flag s =
   case parseModule "text area" s of
-    Left err -> show err
-    Right (Module sig trs) -> parseResult sig (checkTRS flag sig trs)
+    Left err -> return $ show err
+    Right (Module sig trs) -> parseResult sig <$> checkTRS flag sig trs
 
 main = do
   doc <- currentDocumentUnchecked
@@ -80,19 +80,18 @@ main = do
     getElementByIdUnsafe doc "example-selector"
   on checkButton click $
     do inputText <- TextArea.getValue inputArea
-       setInnerHTML outputArea (run Default inputText)
-       return ()
+       outputText <- liftIO $ run Default inputText
+       setInnerHTML outputArea outputText
   on checkLinearButton click $
     do inputText <- TextArea.getValue inputArea
-       setInnerHTML outputArea (run Linearized inputText)
-       return ()
+       outputText <- liftIO $ run Linearized inputText
+       setInnerHTML outputArea outputText
   on checkStrictButton click $
     do inputText <- TextArea.getValue inputArea
-       setInnerHTML outputArea (run Strict inputText)
-       return ()
+       outputText <- liftIO $ run Strict inputText
+       setInnerHTML outputArea outputText
   on exampleSelector change $
     do name <- Select.getValue exampleSelector
        TextArea.setValue inputArea (fromJust (lookup name examples))
   Select.setValue exampleSelector "flatten1"
   TextArea.setValue inputArea flatten1
-  return ()

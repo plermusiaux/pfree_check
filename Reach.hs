@@ -18,17 +18,16 @@ data Reach = Reach TypeName (S.Set Term)
 --
 
 getReachable :: Signature -> AType -> S.Set Term -> S.Set Term
-getReachable sig (AType s p) r = S.map buildComplement reaches
-  where reaches = getReach sig s p r
-        buildComplement (Reach s' p')
+getReachable sig (AType s p) = S.map buildComplement . getReach sig s p
+  where buildComplement (Reach s' p')
           | null p'   = (AVar NoName (AType s' p))
           | otherwise = Compl (AVar NoName (AType s' p)) (sumTerm p')
 
 -- abandon hope all ye who enter here
 getReach :: Signature -> TypeName -> Term -> S.Set Term -> S.Set Reach
-getReach sig s0 p r0
-  | any isVar r0 = S.empty --computeQc filters out variables, so we just need to do this for r0
-  | otherwise    = fromMaybe S.empty (computeReach S.empty (Reach s0 r0))
+getReach sig s0 p = \r0 ->
+    if any isVar r0 then S.empty --computeQc filters out variables, so we just need to do this for r0
+    else fromMaybe S.empty (computeReach S.empty (Reach s0 r0))
   where pSet = removePlusses p
         computeReach sReach sr@(Reach s r)
           | S.member sr sReach = Just sReach
@@ -45,13 +44,12 @@ getReach sig s0 p r0
                                 mReach = fromMaybe reach' rReach
 
 isInstantiable :: Signature -> TypeName -> Term -> S.Set Term -> Bool
-isInstantiable sig s p r = getReachMin sig s p r
+isInstantiable = getReachMin
 
 -- stops when proof that the semantics is not empty
 getReachMin :: Signature -> TypeName -> Term -> S.Set Term -> Bool
-getReachMin sig s0 p r0
-  | any isVar r0 = False
-  | otherwise    = isJust (computeReach S.empty (Reach s0 r0))
+getReachMin sig s0 p = \r0 ->
+    all (not.isVar) r0 && isJust (computeReach S.empty (Reach s0 r0))
   where pSet = removePlusses p
         computeReach sReach sr@(Reach s r)
           | S.member sr sReach = Just sReach
@@ -65,17 +63,18 @@ getReachMin sig s0 p r0
 
 -- return all possible distributions of r over c
 computeQc :: Signature -> FunName -> (S.Set Term) -> [[S.Set Term]]
-computeQc sig c r = foldr getDist [replicate (length d) S.empty] r
+computeQc sig c = foldr getDist [replicate (length d) S.empty]
   where getDist (Appl g ts) tQc
-          | c == g    = concatMap accuDist tQc
+          | c == g    = concatMap (`distribute` ts) tQc
           | otherwise = tQc
-          where accuDist q = distribute q ts
-                distribute [] [] = []
-                distribute (qi:ql) (ti:tl)
-                  | isVar ti  = tail -- filter out variables to avoid empty semantics
-                  | otherwise = ((S.insert ti qi) : ql) : tail
-                  where tail = map (qi:) (distribute ql tl)
         d = domain sig c
+
+distribute :: [S.Set Term] -> [Term] -> [[S.Set Term]]
+distribute [] [] = []
+distribute (qi:ql) (ti:tl)
+  | isVar ti  = tail -- filter out variables to avoid empty semantics
+  | otherwise = ((S.insert ti qi) : ql) : tail
+  where tail = map (qi:) (distribute ql tl)
 
 isVar :: Term -> Bool
 isVar (AVar _ _)   = True

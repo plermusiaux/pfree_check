@@ -11,24 +11,27 @@
 -- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
+{-# LANGUAGE BangPatterns #-}
 
 module Signature (
   arity,
   ctorsOfRange,
   ctorsOfSameRange,
   domain,
+  hasType,
   inferType,
   isFunc,
-  hasType,
   profile,
-  typeCheck,
-  range
+  range,
+  typeCheck
 ) where
 
-import Datatypes (FunName, TypeName, Constructor(..), Function(..), Signature(..), Term(..), AType(..))
+import Datatypes (FunName, TypeName, VarName(..), Constructor(..), Function(..), Signature(..), Term(..), AType(..))
 import Data.List ( find )
 import Data.Either
 import Data.Maybe
+
+import Text.Printf ( printf )
 
 _funName (Constructor f _ _) = f
 _Cdomain (Constructor _ d _) = d
@@ -40,25 +43,25 @@ _Frange (Function _ _ r _) = r
 getFunction :: Signature -> FunName -> Function
 getFunction (Signature _ funs) f = try (find isF funs)
   where try (Just r) = r
-        try Nothing = error (show f ++ " is not declared")
+        try Nothing = error $ printf "%v is not declared" f
         isF (Function g _ _ _) = f == g
 
 getter :: (Constructor -> a) -> (Function -> a) -> Signature -> FunName -> a
 getter getC getF (Signature ctors funs) f = unpack (find isF eithers)
   where unpack (Just r) = either getC getF r
-        unpack Nothing = error (show f ++ " is not declared")
+        unpack Nothing = error $ printf "%v is not declared" f
         eithers = (map Left ctors) ++ (map Right funs)
         isF (Left (Constructor g _ _)) = f == g
         isF (Right (Function g  _ _ _)) = f == g
 
 domain :: Signature -> FunName -> [TypeName]
-domain sig f = getter _Cdomain _Fdomain sig f
+domain = getter _Cdomain _Fdomain
 
 range :: Signature -> FunName -> TypeName
-range sig f = getter _Crange _Frange sig f
+range = getter _Crange _Frange
 
 arity :: Signature -> FunName -> Int
-arity sig f = length (domain sig f)
+arity sig = length . domain sig
 
 profile :: Signature -> FunName -> [([Term], Term)]
 profile sig f = case getFunction sig f of
@@ -69,14 +72,14 @@ ctorsOfRange (Signature ctors _) ty = map _funName (filter hasRangeTy ctors)
   where hasRangeTy (Constructor _ _ ty' ) = ty == ty'
 
 ctorsOfSameRange :: Signature -> FunName -> [FunName]
-ctorsOfSameRange sig f = ctorsOfRange sig (range sig f)
+ctorsOfSameRange sig = ctorsOfRange sig . range sig
 
 isFunc :: Signature -> FunName -> Bool
 isFunc (Signature _ funs) f = any isF funs
   where isF (Function g _ _ _) = f==g
 
 hasType :: Signature -> Term -> TypeName -> Bool
-hasType sig t0 s0 = t0 # s0
+hasType sig = (#)
   where
     (Appl f _) # s = range sig f == s
     (Alias _ u) # s = u # s
@@ -85,30 +88,50 @@ hasType sig t0 s0 = t0 # s0
     (Compl u _) # s = u # s
     (Plus u1 u2) # s = u1 # s || u2 # s
 
-typeCheck :: Signature -> Term -> TypeName -> Term
-typeCheck sig t0 s0 = case (t0 # s0) of
-  Nothing      -> t0
-  Just (v, s) -> error (show v ++ " does not match expected type " ++ show s)
-  where
-    t@(Appl f tl) # s
-      | (range sig f /= s)    = Just (t, s)
-      | otherwise              = checkArg tl (domain sig f)
-      where checkArg [] [] = Nothing
-            checkArg (ti:tip) (si:sip) = case ti # si of
-              Nothing -> checkArg tip sip
-              just    -> just
-            checkArg _ _ = Just (t, s)
-    (Alias _ u) # s = u # s
-    Bottom # s = Just (Bottom, s)
-    u@(AVar _ (AType s1 _)) # s2
-      | s1 /= s2  = Just (u, s2)
-      | otherwise = Nothing
-    (Compl u _) # s = u # s
-    (Plus u1 u2) # s = maybe (u2 # s) Just (u1 # s)
-
 inferType :: Signature -> Term -> TypeName
-inferType sig t = typof t
-  where typof (Appl f _) = range sig f
+inferType sig = typof
+  where typof (Appl f tl) =
+          if checkArg tl d then range sig f
+          else error $ printf "symbol [%v] expects %i arguments" f (length d)
+          where d = domain sig f
         typof (AVar _ (AType s _)) = s
         typof (Alias _ u) = typof u
-        typof (Compl u _) = typof u
+        typof (Plus u1 u2) =
+          let s1 = typof u1 in
+          if s1 == typof u2 then s1
+          else error $ printf "type of %v does not match type of %v" u1 u2
+        typof (Compl u r) =
+          let s = typof u in
+          if s == typof r then s
+          else error $ printf "type of %v does not match type of %v" u r
+        typof Bottom = error $ printf "cannot infer type of ⊥"
+        checkArg [] [] = True
+        checkArg (t:tl) (s:sl) = let !_ = typeCheck sig t s in checkArg tl sl
+        checkArg _ _ = False
+
+typeCheck :: Signature -> Term -> TypeName -> Term
+typeCheck sig = (#)
+  where (Appl f tl) # s =
+          case checkArg tl d of
+            Just ul
+              | range sig f == s -> Appl f ul
+              | otherwise        -> error $ printf "return type of [%v] does not match expected type %v" f s
+            _                    -> error $ printf "symbol [%v] expects %i arguments" f (length d)
+          where d = domain sig f
+        (AVar x Unknown) # s = AVar x (AType s Bottom)
+        t@(AVar x (AType s1 _)) # s2 =
+          if s1 == s2 then t
+          else error $ printf "variable %v is typed %v, which does not match expected type %v" x s1 s2
+        Bottom # s = error $ printf "type of ⊥ is undefined"
+        (Alias x u) # s = Alias x $! (u # s)
+        (Plus u1 u2) # s =
+          (Plus $! (u1 # s)) $! (u2 # s)
+        (Compl u r) # s =
+          (Compl $! (u # s)) $! (r # s)
+        (Anti p) # s = Compl (AVar NoName (AType s Bottom)) $! (p # s)
+        checkArg [] [] = Just []
+        checkArg (t:tl) (s:sl) = case checkArg tl sl of
+          Just ul -> Just $! (t # s) : ul
+          nothing -> nothing
+        checkArg _ _ = Nothing
+
