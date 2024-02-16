@@ -22,6 +22,7 @@ module Signature (
   isFunc,
   profile,
   range,
+  sigOf,
   typeCheck
 ) where
 
@@ -35,9 +36,11 @@ import Text.Printf ( printf )
 _funName (Constructor f _ _) = f
 _Cdomain (Constructor _ d _) = d
 _Crange (Constructor _ _ r) = r
+_CsigOf (Constructor _ d r) = (d, r)
 
 _Fdomain (Function _ d _ _) = d
 _Frange (Function _ _ r _) = r
+_FsigOf (Function _ d r _) = (d, r)
 
 getFunction :: Signature -> FunName -> Function
 getFunction (Signature _ funs) f = try (find isF funs)
@@ -58,6 +61,9 @@ domain = getter _Cdomain _Fdomain
 
 range :: Signature -> FunName -> TypeName
 range = getter _Crange _Frange
+
+sigOf :: Signature -> FunName -> ([TypeName], TypeName)
+sigOf = getter _CsigOf _FsigOf
 
 arity :: Signature -> FunName -> Int
 arity sig = length . domain sig
@@ -90,9 +96,9 @@ hasType sig = (#)
 inferType :: Signature -> Term -> TypeName
 inferType sig = typof
   where typof (Appl f tl) =
-          if checkArg tl d then range sig f
+          if checkArg tl d then s
           else error $ printf "symbol [%v] expects %i arguments" f (length d)
-          where d = domain sig f
+          where (d, s) = sigOf sig f
         typof (AVar _ (AType s _)) = s
         typof (Alias _ u) = typof u
         typof (Plus u1 u2) =
@@ -113,10 +119,10 @@ typeCheck sig = (#)
   where (Appl f tl) # s =
           case checkArg tl d of
             Just ul
-              | range sig f == s -> Appl f ul
-              | otherwise        -> error $ printf "return type of [%v] does not match expected type %v" f s
-            _                    -> error $ printf "symbol [%v] expects %i arguments" f (length d)
-          where d = domain sig f
+              | s == s'   -> Appl f ul
+              | otherwise -> error $ printf "return type of [%v] does not match expected type %v" f s
+            _             -> error $ printf "symbol [%v] expects %i arguments" f (length d)
+          where (d, s') = sigOf sig f
         (AVar x Unknown) # s = AVar x (AType s Bottom)
         t@(AVar x (AType s1 _)) # s2 =
           if s1 == s2 then t
