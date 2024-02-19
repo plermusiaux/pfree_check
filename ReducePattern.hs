@@ -58,10 +58,10 @@ conjunction sig = (*)
     u * (Plus u1 u2) = plus (u * u1) (u * u2)                             --S3
     (AVar x Unknown) * (AVar _ s) = Alias x (AVar NoName s) -- for variable inference only
     u * (AVar _ (AType _ Bottom)) = u                                     --Generalization of T1
-    v@(AVar x (AType s1 p1)) * (AVar _ (AType s2 p2))
+    v@(AVar x (AType s1 p1)) * (AVar _ s@(AType s2 p2))
       | s1 /= s2     = Bottom
       | p1 == p2     = v                                                  --T2
-      | p1 == Bottom = AVar x (AType s2 p2)                               --T1
+      | p1 == Bottom = AVar x s                                           --T1
 --    | otherwise    -> (AVar x (AType s1 (Plus p1 p2)))
 -- This should never happen, check isInstantiable sig s1 (plus p1 p2) S.empty, if it does...
     (AVar x (AType s Bottom)) * u

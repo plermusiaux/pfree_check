@@ -10,9 +10,9 @@ import Datatypes
 checkDiff :: Eq a => [a] -> [a] -> Maybe [a]
 checkDiff l [] = Just l
 checkDiff [] _ = Nothing
-checkDiff (q1:l1) (q2:l2)
-  | q1 == q2  = checkDiff l1 l2
-  | otherwise = fmap (q1:) (checkDiff l1 (q2:l2))
+checkDiff (q1:l1) l2@(q2:tail)
+  | q1 == q2  = checkDiff l1 tail
+  | otherwise = (q1:) <$> (checkDiff l1 l2)
 
 
 -- interleave abc ABC = Abc, aBc, abC
