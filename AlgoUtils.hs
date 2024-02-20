@@ -10,9 +10,9 @@ import Datatypes
 checkDiff :: Eq a => [a] -> [a] -> Maybe [a]
 checkDiff l [] = Just l
 checkDiff [] _ = Nothing
-checkDiff (q1:l1) (q2:l2)
-  | q1 == q2  = checkDiff l1 l2
-  | otherwise = fmap (q1:) (checkDiff l1 (q2:l2))
+checkDiff (q1:l1) l2@(q2:tail)
+  | q1 == q2  = checkDiff l1 tail
+  | otherwise = (q1:) <$> (checkDiff l1 l2)
 
 
 -- interleave abc ABC = Abc, aBc, abC
@@ -52,13 +52,9 @@ sumTerm = foldr plus Bottom
 
 removePlusses :: Term -> S.Set Term
 removePlusses (Plus p1 p2) = removePlusses p1 `S.union` removePlusses p2
-removePlusses (Appl f ps) = S.fromList (map (Appl f) subterms)            --S1
-  where subterms = traverse (S.toList . removePlusses) ps
---   where subterms = foldr buildSet (S.singleton []) ps
---         buildSet t sl = foldr (S.union . (buildList t)) S.empty sl
---         buildList t l = S.mapMonotonic (:l) (removePlusses t)
---
---         buildSet t sl = S.mapMonotonic (uncurry (:)) (S.cartesianProduct (removePlusses t) sl)
+removePlusses (Appl f ps) = S.mapMonotonic (Appl f) subterms              --S1
+  where subterms = foldr buildSet (S.singleton []) ps
+        buildSet t = S.mapMonotonic (uncurry (:)) . S.cartesianProduct (removePlusses t)
 removePlusses Bottom = S.empty
 removePlusses v@(AVar _ _) = S.singleton v
 removePlusses m@(Compl _ _) = S.singleton m

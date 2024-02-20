@@ -14,7 +14,7 @@ import Signature
 
 alias :: VarName -> Term -> Term
 alias NoName t = t
-alias x Bottom = Bottom
+alias x Bottom = Bottom                                                   --L1
 alias x t = Alias x t
 
 appl :: FunName -> [Term] -> Term
@@ -29,9 +29,6 @@ complement sig = (\\)
     u \\ (AVar _ _) = Bottom                                              --M1
     u \\ Bottom = u                                                       --M2
     Plus q1 q2 \\ p = plus (q1 \\ p) (q2 \\ p)                            --M3
---    (Var x) \\ p@(Appl g ps) = alias x (sum [pattern f \\ p | f <- fs])
---      where fs = ctorsOfSameRange sig g
---            pattern f = Appl f (replicate (arity sig f) (Var "_"))
     Bottom \\ u = Bottom                                                  --M5
     p@(Appl _ _) \\ (Plus p1 p2) = (p \\ p1) \\ p2                        --M6
     Appl f ps \\ Appl g qs
@@ -47,7 +44,7 @@ complement sig = (\\)
         where cs = ctorsOfRange sig s
               pattern c = Appl c (map (`buildVar` p) (domain sig c))
               r = removePlusses t
-    Alias x p1 \\ p2 = alias x (p1 \\ p2)
+    Alias x p1 \\ p2 = alias x (p1 \\ p2)                                 --L3
 --    p1 \\ Alias x p2 = p1 \\ p2
 
 -------------------------------------------------------------------------------
@@ -59,44 +56,34 @@ conjunction sig = (*)
     u * Bottom = Bottom                                                   --E3
     (Plus u1 u2) * u = plus (u1 * u) (u2 * u)                             --S2
     u * (Plus u1 u2) = plus (u * u1) (u * u2)                             --S3
-    v@(AVar x aType) * (AVar y (AType s2 p2)) = case aType of             --Generalization of T1/T2 for variables
-        Unknown -> Alias x (AVar NoName (AType s2 p2)) -- for variable inference only
-        AType s1 p1
-          | s1 /= s2     -> Bottom
-          | p1 == p2     -> v
-          | p1 == Bottom -> AVar x (AType s2 p2)
-          | p2 == Bottom -> v
---          | otherwise    -> (AVar x (AType s1 (Plus p1 p2)))
+    (AVar x Unknown) * (AVar _ s) = Alias x (AVar NoName s) -- for variable inference only
+    u * (AVar _ (AType _ Bottom)) = u                                     --Generalization of T1
+    v@(AVar x (AType s1 p1)) * (AVar _ s@(AType s2 p2))
+      | s1 /= s2     = Bottom
+      | p1 == p2     = v                                                  --T2
+      | p1 == Bottom = AVar x s                                           --T1
+--    | otherwise    -> (AVar x (AType s1 (Plus p1 p2)))
 -- This should never happen, check isInstantiable sig s1 (plus p1 p2) S.empty, if it does...
-    u * (AVar _ (AType s Bottom)) = u                                     --T1
     (AVar x (AType s Bottom)) * u
-        | hasType sig u s = alias x u                                     --T2
+        | hasType sig u s = alias x u                                     --Generalization of T2
         | otherwise       = Bottom
     Appl f ps * Appl g qs
         | f == g = appl f (zipWith (*) ps qs)                             --T3
         | otherwise = Bottom                                              --T4
---    (AVar _ (AType s p)) * t@(Appl f ts)
---        | s == range sig f = (sumTerm (map pattern fs)) * (complement sig q p) --P1
---        | otherwise        = Bottom
---        where fs = ctorsOfRange sig s
---              pattern a = Appl a (map (`buildVar` p) (domain sig a))
     (AVar x (AType s p)) * (Appl f ts)
-        | s == range sig f = complement sig (alias x (appl f zXts)) p    --P1
-        | otherwise        = Bottom
-        where zXts = zipWith ((*) . (`buildVar` p)) (domain sig f) ts
+        | s == s'   = complement sig (alias x (appl f zXts)) p            --P1
+        | otherwise = Bottom
+        where (d, s') = sigOf sig f
+              zXts = zipWith ((*) . (`buildVar` p)) d ts
     (Appl f ts) * (AVar x (AType s p))
-        | s == range sig f = complement sig (appl f tXzs) p              --P2
-        | otherwise        = Bottom
-        where tXzs = zipWith (\ti -> (ti *) . (`buildVar` p)) ts (domain sig f)
-    v1 * (Compl v2 t) = complement sig (v1 * v2) t                       --P3-4
-    (Compl v t) * u = complement sig (v * u) t                           --P5
---    (Var x) * u = Alias x u
---    (Appl f ts) * (AVar _ (AType _ p)) = complement sig (Appl f tsXz) p
---        where tsXz = zipWith conjVar ts (domain sig f)
---              conjVar t s = t * (AVar (VarName (show t)) (AType s p))
---
-    (Alias x t) * u = alias x (t * u)
-    t * (Alias x u) = alias x (t * u)
+        | s == s'   = complement sig (appl f tXzs) p                      --P2
+        | otherwise = Bottom
+        where (d, s') = sigOf sig f
+              tXzs = zipWith (\ti -> (ti *) . (`buildVar` p)) ts d
+    v1 * (Compl v2 t) = complement sig (v1 * v2) t                        --P3-4
+    (Compl v t) * u = complement sig (v * u) t                            --P5
+    (Alias x t) * u = alias x (t * u)                                     --L4
+    t * (Alias x u) = alias x (t * u)                                     --L5
 
 
 
@@ -147,6 +134,5 @@ inferRules sig (Rule (Appl f ls0) rhs0) = concatMap buildRules (map buildDomain 
         buildRule p (Rule l rhs) = (Rule l (typeCheck sig rhs s), p)
         conjVar t a = conjunction sig t (AVar NoName a)
         ls = zipWith (typeCheck sig) ls0 d
-        d = domain sig f
-        s = range sig f
+        (d, s) = sigOf sig f
 
