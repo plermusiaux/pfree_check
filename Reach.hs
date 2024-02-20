@@ -68,11 +68,10 @@ getReachMin sig s0 p = \r0 ->
 
 -- return all possible distributions of r over c
 computeQc :: Signature -> FunName -> (S.Set Term) -> [[S.Set Term]]
-computeQc sig c = foldr getDist [replicate (length d) S.empty]
+computeQc sig c = foldr getDist [replicate (arity sig c) S.empty]
   where getDist (Appl g ts) tQc
           | c == g    = concatMap (`distribute` ts) tQc
           | otherwise = tQc
-        d = domain sig c
 
 distribute :: [S.Set Term] -> [Term] -> [[S.Set Term]]
 distribute [] [] = []
